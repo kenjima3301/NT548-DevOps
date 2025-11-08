@@ -1,0 +1,5 @@
+# Ví dụ cho Mac/Linux
+ssh -i "~/.ssh/my-aws-key" ubuntu@13.214.122.175
+
+# Ví dụ cho Windows (dùng đường dẫn file private key)
+ssh -i "thu-muc-1/thu-muc-2/my-aws-key" ubuntu@13.214.122.175
