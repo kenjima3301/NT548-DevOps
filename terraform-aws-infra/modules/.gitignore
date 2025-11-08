@@ -1,0 +1,57 @@
+# === Terraform core ===
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# === Terraform overrides / local vars ===
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# === Logs and crash dumps ===
+*.log
+crash.log
+
+# === Sensitive environment / config files ===
+.env
+.env.*
+secrets.*
+*.bak
+
+# === Private keys (with or without extension) ===
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+id_rsa
+id_rsa.pub
+id_dsa
+id_dsa.pub
+id_ecdsa
+id_ecdsa.pub
+id_ed25519
+id_ed25519.pub
+id_*
+*-key
+*_key
+*private*
+my_key
+ssh_key
+
+# === IDE/editor folders ===
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# === OS-specific files ===
+.DS_Store
+Thumbs.db
