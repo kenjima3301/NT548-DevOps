@@ -1,17 +1,7 @@
-# === Terraform core ===
-*.tfstate
-*.tfstate.backup
-.terraform/
-.terraform.lock.hcl
+/modules/*
 
-# === Terraform overrides / local vars ===
-*.tfvars
-*.tfvars.json
-*.auto.tfvars
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
+!/modules/ec2/
+!/modules/network/
 
 # === Logs and crash dumps ===
 *.log

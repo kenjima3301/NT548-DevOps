@@ -1,20 +1,23 @@
 variable "environment" {
   description = "Name of environment"
   type        = string
-}
-variable "instance_type" {
-  description = "EC2 Type"
-  type        = string
+  default     = "dev-ecs"
 }
 
-variable "ami_id" {
-  description = "AMI type for EC2"
+variable "app_port" {
+  description = "Port listening"
+  type        = number
+}
+
+variable "app_name" {
+  description = "Name of application"
   type        = string
 }
 
 variable "aws_region" {
   description = "Region of AWS"
   type        = string
+  default     = "ap-southeast-1"
 }
 
 variable "vpc_cidr" {
@@ -23,11 +26,12 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidr" {
-  description = "IP for Public subnet"
+  description = "IP of Public subnet"
   type        = string
 }
 
 variable "private_subnet_cidr" {
-  description = "IP for Private subnet"
+  description = "IP of Private subnet"
   type        = string
 }
+
