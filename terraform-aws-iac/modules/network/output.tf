@@ -1,9 +1,14 @@
-output "subnet_id" {
-  description = "The ID of the created subnet"
-  value       = aws_subnet.main.id
+output "vpc_id" {
+  description = "The ID of VPC"
+  value       = aws_vpc.main.id
+}
+output "public_subnet_ids" {
+  description = "The IDs of the created public subnet"
+  value       = [aws_subnet.public_subnet.id]
 }
 
-output "security_group_id" {
-  description = "The ID of the security group"
-  value       = aws_security_group.allow_ssh_http.id
+output "private_subnet_ids" {
+  description = "The IDs of the created private subnet"
+  value       = [aws_subnet.private_subnet.id]
 }
+
