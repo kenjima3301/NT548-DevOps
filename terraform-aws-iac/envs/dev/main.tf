@@ -56,3 +56,10 @@ module "ec2" {
   security_group_id = aws_security_group.ec2_sg.id
 }
 
+resource "aws_ecr_repository" "my_app" {
+  name = "my-web-app"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
