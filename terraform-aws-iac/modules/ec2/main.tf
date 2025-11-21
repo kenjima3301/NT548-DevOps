@@ -51,9 +51,9 @@ resource "aws_instance" "web_server" {
     usermod -aG docker ubuntu
 
     # 4. Kích hoạt Nginx (từ script cũ)
-    echo "--- Kích hoạt Nginx ---"
-    systemctl start nginx
-    systemctl enable nginx
+    # echo "--- Kích hoạt Nginx ---"
+    # systemctl start nginx
+    # systemctl enable nginx
 
     # 5. Kiểm tra cài đặt
     echo "--- Cài đặt hoàn tất! Kiểm tra phiên bản ---"
