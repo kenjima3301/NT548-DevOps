@@ -1,0 +1,3 @@
+[submodule "web/dorashop"]
+	path = web/dorashop
+	url = https://github.com/kenjima3301/DoraShop.git
