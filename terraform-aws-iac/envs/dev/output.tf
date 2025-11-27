@@ -1,7 +1,7 @@
-output "web_server_public_ip" {
-  description = "Public IP of the web server in dev"
-  value       = module.ec2.public_ip
-}
+# output "web_server_public_ip" {
+#   description = "Public IP of the web server in dev"
+#   value       = module.ec2.public_ip
+# }
 
 output "ecr_repository_url" {
   description = "URL of ECR store to push image"
