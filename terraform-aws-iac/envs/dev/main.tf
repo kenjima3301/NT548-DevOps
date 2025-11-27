@@ -3,11 +3,12 @@ provider "aws" {
 }
 
 module "network" {
-  source              = "../../modules/network"
-  environment         = "dev"
-  vpc_cidr            = var.vpc_cidr
-  public_subnet_cidr  = var.public_subnet_cidr
-  private_subnet_cidr = var.private_subnet_cidr
+  source               = "../../modules/network"
+  environment          = "dev"
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_1_cidr = var.public_subnet_1_cidr
+  public_subnet_2_cidr = var.public_subnet_2_cidr
+  private_subnet_cidr  = var.private_subnet_cidr
 }
 
 resource "aws_key_pair" "my_key" {
@@ -44,6 +45,13 @@ resource "aws_security_group" "ec2_sg" {
   tags = {
     Name = "${var.environment}-ec2-sg"
   }
+}
+
+module "eks" {
+  source             = "../../modules/eks"
+  environment        = var.environment
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
 }
 
 module "ec2" {

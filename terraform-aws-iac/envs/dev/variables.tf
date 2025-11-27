@@ -22,8 +22,13 @@ variable "vpc_cidr" {
   type        = string
 }
 
-variable "public_subnet_cidr" {
-  description = "IP for Public subnet"
+variable "public_subnet_1_cidr" {
+  description = "CIDR Public subnet 1"
+  type        = string
+}
+
+variable "public_subnet_2_cidr" {
+  description = "CIDR Public subnet 2"
   type        = string
 }
 
