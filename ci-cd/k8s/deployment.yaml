@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dorashop-web
+  namespace: dorashop
+  labels:
+    app: dorashop-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dorashop-web
+  template:
+    metadata:
+      labels:
+        app: dorashop-web
+    spec:
+      containers:
+      - name: web
+        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        
+        env:
+        - name: DJANGO_ADMIN_USER
+          value: "admin"
+        - name: DJANGO_ADMIN_EMAIL
+          value: "admin@example.com"
+        - name: DJANGO_ADMIN_PASSWORD
+          value: "admin"
+        
+        - name: DB_ENGINE
+          value: "django.db.backends.postgresql"
+        - name: DB_NAME
+          value: "dorashop"
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PASSWORD
+          value: "postgres"
+        - name: DB_HOST
+          value: "db"
+        - name: DB_PORT
+          value: "5432"
