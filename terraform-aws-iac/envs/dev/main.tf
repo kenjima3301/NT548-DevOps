@@ -54,15 +54,15 @@ module "eks" {
   private_subnet_ids = module.network.private_subnet_ids
 }
 
-module "ec2" {
-  source        = "../../modules/ec2"
-  ami_id        = var.ami_id
-  instance_type = var.instance_type
-  key_name      = aws_key_pair.my_key.key_name
+# module "ec2" {
+#   source        = "../../modules/ec2"
+#   ami_id        = var.ami_id
+#   instance_type = var.instance_type
+#   key_name      = aws_key_pair.my_key.key_name
 
-  subnet_id         = module.network.public_subnet_ids[0]
-  security_group_id = aws_security_group.ec2_sg.id
-}
+#   subnet_id         = module.network.public_subnet_ids[0]
+#   security_group_id = aws_security_group.ec2_sg.id
+# }
 
 resource "aws_ecr_repository" "my_app" {
   name = "my-web-app"
@@ -70,4 +70,16 @@ resource "aws_ecr_repository" "my_app" {
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+resource "null_resource" "cluster_bootstrap" {
+  triggers = {
+    cluster_endpoint = module.eks.cluster_endpoint
+  }
+
+  provisioner "local-exec" {
+    command = "bash ../../../scripts/setup_cluster.sh ${module.eks.cluster_name} ${var.aws_region} ${aws_ecr_repository.my_app.repository_url}}"
+  }
+
+  depends_on = [module.eks, aws_ecr_repository.my_app]
 }
