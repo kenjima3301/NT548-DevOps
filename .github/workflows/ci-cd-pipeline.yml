@@ -1,21 +1,21 @@
-name: DoraShop CI/CD Pipeline with Security Scanning
+name: DoraShop CI/CD Pipeline
+# File path: .github/workflows/ci-cd-pipeline.yaml
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: my-web-app
-  EKS_CLUSTER_NAME: dev-cluster
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # Job 1: Code Quality Analysis with SonarQube
-  code-quality:
-    name: Code Quality Analysis
+  # Job 1: Build and Test
+  test:
+    name: Test & Code Quality
     runs-on: ubuntu-latest
     
     steps:
@@ -23,253 +23,148 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-          
+      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
       - name: Install dependencies
         run: |
           cd web/dorashop
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install coverage pytest
-          
+      
       - name: Run tests with coverage
         run: |
           cd web/dorashop
           coverage run --source='.' manage.py test
           coverage xml
           coverage report
-          
+      
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          
-      - name: SonarQube Quality Gate Check
+      
+      - name: SonarQube Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # Job 2: Security Scanning with Trivy
-  security-scan:
-    name: Security Vulnerability Scan
+  # Job 2: Security Scan
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-        
-      - name: Build Docker image for scanning
+      
+      - name: Build Docker image
         run: |
           cd web/dorashop
           docker build -t dorashop:scan .
-          
-      - name: Run Trivy vulnerability scanner
+      
+      - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'dorashop:scan'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          
-      - name: Upload Trivy scan results to GitHub Security
+      
+      - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v2
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-          
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: 'web/dorashop'
-          format: 'table'
-          exit-code: '0'  # Changed to 0 to not fail on vulnerabilities
-          severity: 'CRITICAL,HIGH'
 
-  # Job 3: Build and Push to ECR
-  build-and-push:
-    name: Build & Push to ECR
+  # Job 3: Build and Push Image
+  build:
+    name: Build & Push
     runs-on: ubuntu-latest
-    needs: [code-quality, security-scan]
+    needs: [test, security]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     
     outputs:
-      image-uri: ${{ steps.image-info.outputs.image-uri }}
-      
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-        
+      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          
+      
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        
-      - name: Build, tag, and push image to Amazon ECR
-        id: build-image
+      
+      - name: Set image metadata
+        id: meta
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+      
+      - name: Build and push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           cd web/dorashop
-          # Build once with multiple tags
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
                        -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          
-      - name: Set image info output
-        id: image-info
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          echo "image-uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
-      - name: Final security scan of pushed image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.image-info.outputs.image-uri }}
-          format: 'table'
-          exit-code: '0'
 
-  # Job 4: Update Kubernetes manifests and trigger ArgoCD
-  update-k8s-manifests:
-    name: Update K8s Manifests for ArgoCD
+  # Job 4: Update Kubernetes Manifests
+  update-manifests:
+    name: Update K8s Manifests
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: build
     if: github.ref == 'refs/heads/main'
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.PAT_TOKEN }}
-          
-      - name: Update deployment image
+      
+      - name: Update deployment manifest
         env:
-          IMAGE_URI: ${{ needs.build-and-push.outputs.image-uri }}
+          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
         run: |
-          # Update the image in deployment.yaml
-          sed -i "s|image: .*|image: ${IMAGE_URI}|g" Devops/NT548-DevOps/ci-cd/k8s/deployment.yaml
-          
-      - name: Create ArgoCD Application manifest
-        run: |
-          # Copy template and replace placeholder with actual repo URL
-          cp Devops/NT548-DevOps/ci-cd/k8s/argocd-application-template.yaml Devops/NT548-DevOps/ci-cd/k8s/argocd-application.yaml
-          sed -i "s|REPO_URL_PLACEHOLDER|${{ github.server_url }}/${{ github.repository }}|g" Devops/NT548-DevOps/ci-cd/k8s/argocd-application.yaml
-          
+          # Update image tag in deployment.yaml
+          sed -i "s|image: .*$ECR_REPOSITORY.*|image: ${{ secrets.ECR_REGISTRY }}/$ECR_REPOSITORY:${IMAGE_TAG}|g" ci-cd/k8s/deployment.yaml
+      
       - name: Commit and push changes
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git pull origin main --rebase
-          git add Devops/NT548-DevOps/ci-cd/k8s/deployment.yaml Devops/NT548-DevOps/ci-cd/k8s/argocd-application.yaml
-          git diff --staged --quiet || git commit -m "Update image to ${{ needs.build-and-push.outputs.image-uri }} [skip ci]"
-          git push origin main
-
-  # Job 5: Deploy to EKS via ArgoCD
-  deploy-to-eks:
-    name: Deploy to EKS via ArgoCD
-    runs-on: ubuntu-latest
-    needs: [build-and-push, update-k8s-manifests]
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-        
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-          
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.28.0'
-          
-      - name: Update kubeconfig
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add ci-cd/k8s/deployment.yaml
+          git diff --staged --quiet || git commit -m "Update image to ${IMAGE_TAG} [skip ci]"
+          git push
+      
+      - name: Deployment summary
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-          
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
-          rm argocd-linux-amd64
-          
-      - name: Login to ArgoCD
-        run: |
-          argocd login ${{ secrets.ARGOCD_SERVER }} \
-            --username ${{ secrets.ARGOCD_USERNAME }} \
-            --password ${{ secrets.ARGOCD_PASSWORD }} \
-            --insecure
-            
-      - name: Apply ArgoCD Application
-        run: |
-          kubectl apply -f Devops/NT548-DevOps/ci-cd/k8s/argocd-application.yaml
-          
-      - name: Sync ArgoCD Application
-        run: |
-          # Wait for application to be registered
-          sleep 10
-          argocd app sync dorashop --force --prune
-          
-      - name: Wait for deployment
-        run: |
-          argocd app wait dorashop --timeout 600
-          
-      - name: Get application status
-        run: |
-          argocd app get dorashop
-
-  # Job 6: Notify deployment status
-  notify:
-    name: Notify Deployment Status
-    runs-on: ubuntu-latest
-    needs: [deploy-to-eks]
-    if: always()
-    
-    steps:
-      - name: Notify Success
-        if: needs.deploy-to-eks.result == 'success'
-        run: |
-          echo "✅ Deployment successful!"
-          echo "DoraShop has been successfully deployed to EKS"
-          echo "Image: ${{ needs.build-and-push.outputs.image-uri }}"
-          
-      - name: Notify Failure
-        if: needs.deploy-to-eks.result != 'success'
-        run: |
-          echo "❌ Deployment failed!"
-          echo "Please check the logs for more details"
-          exit 1
+          echo "✅ Deployment manifest updated successfully!"
+          echo "📦 Image: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build.outputs.image-tag }}"
+          echo "🔄 ArgoCD will automatically sync the changes"
