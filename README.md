@@ -17,6 +17,6 @@
 NT548-DevOps/
 ├── terraform-aws-iac/     # IaC - triển khai hạ tầng AWS bằng Terraform
 ├── web/                     # Mã nguồn ứng dụng web (Laravel/Django/etc)
-├── ci-cd/                   # Pipeline CI/CD (Jenkinsfile, GitHub Actions, ...)
+├── ci-cd/                   # Pipeline CI/CD (Jenkinsfile, GitHub Actions, ....)
 ├── .gitignore
-└── README.md
+└── README.md 
