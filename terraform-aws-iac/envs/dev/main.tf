@@ -54,15 +54,11 @@ module "eks" {
   private_subnet_ids = module.network.private_subnet_ids
 }
 
-# module "ec2" {
-#   source        = "../../modules/ec2"
-#   ami_id        = var.ami_id
-#   instance_type = var.instance_type
-#   key_name      = aws_key_pair.my_key.key_name
-
-#   subnet_id         = module.network.public_subnet_ids[0]
-#   security_group_id = aws_security_group.ec2_sg.id
-# }
+module "s3_media" {
+  source      = "../../modules/s3"
+  bucket_name = "dorashop-media-assets-${var.environment}"
+  environment = var.environment
+}
 
 resource "aws_ecr_repository" "my_app" {
   name         = "my-web-app"
