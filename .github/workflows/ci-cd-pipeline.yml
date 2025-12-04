@@ -6,6 +6,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:  
 
 env:
   AWS_REGION: ap-southeast-1
@@ -132,10 +133,10 @@ jobs:
       - name: Build and push Docker image
         run: |
           cd web/dorashop
-          docker build -t ${{ env.ECR_REGISTRY_URL }}/$ECR_REPOSITORY:$IMAGE_TAG \
-                       -t ${{ env.ECR_REGISTRY_URL }}/$ECR_REPOSITORY:latest .
-          docker push ${{ env.ECR_REGISTRY_URL }}/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push ${{ env.ECR_REGISTRY_URL }}/$ECR_REPOSITORY:latest
+          docker build -t $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG \
+                       -t $ECR_REGISTRY_URL/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY:latest
 
   # Job 4: Update Kubernetes Manifests
   update-manifests:
