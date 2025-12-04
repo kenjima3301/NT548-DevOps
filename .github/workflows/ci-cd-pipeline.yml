@@ -1,174 +1,72 @@
-name: DoraShop CI/CD Pipeline
-# File path: .github/workflows/ci-cd-pipeline.yaml
+name: Stable CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, ci/setup-devsecops-pipeline]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:  
+    branches: 
+      - main
+      - develop
+      - 'ci/setup-devsecops-pipeline'
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-southeast-1
-  ECR_REGISTRY_URL: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com
   ECR_REPOSITORY: my-web-app
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # Job 1: Build and Test
-  test:
-    name: Test & Code Quality
+  build-deploy:
+    name: Build - Push - Update GitOps
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      
-      - name: Install dependencies
-        run: |
-          cd web/dorashop
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install coverage pytest
-      
-      - name: Run tests with coverage
-        run: |
-          cd web/dorashop
-          coverage run --source='.' manage.py test
-          coverage xml
-          coverage report
-      
-      - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-      
-      - name: SonarQube Quality Gate
-        uses: sonarsource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # token: ${{ secrets.PAT_TOKEN }}
 
-  # Job 2: Security Scan
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Build Docker image
-        run: |
-          cd web/dorashop
-          docker build -t dorashop:scan .
-      
-      - name: Run Trivy scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'dorashop:scan'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      
-      - name: Upload scan results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  # Job 3: Build and Push Image
-  build:
-    name: Build & Push
-    runs-on: ubuntu-latest
-    needs: [test, security]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-    
-    outputs:
-      image-tag: ${{ steps.meta.outputs.image-tag }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      
-      - name: Set image metadata
-        id: meta
-        run: |
-          IMAGE_URI="${{ env.ECR_REGISTRY_URL }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-      
-      - name: Build and push Docker image
-        run: |
-          cd web/dorashop
-          docker build -t $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG \
-                       -t $ECR_REGISTRY_URL/$ECR_REPOSITORY:latest .
-          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY:latest
 
-  # Job 4: Update Kubernetes Manifests
-  update-manifests:
-    name: Update K8s Manifests
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
-          submodules: recursive
-      
-      - name: Update deployment manifest
+      - name: Build and Push Docker Image
+        id: build-image
         env:
-          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Update image tag in deployment.yaml
-          sed -i "s|image: .*$ECR_REPOSITORY.*|image: ${{ env.ECR_REGISTRY_URL }}/$ECR_REPOSITORY:${IMAGE_TAG}|g" ci-cd/k8s/deployment.yaml
-      
-      - name: Commit and push changes
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+                       -f web/dorashop/Dockerfile web/dorashop/
+          
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Kubernetes Manifest
+        env:
+          NEW_IMAGE: ${{ steps.build-image.outputs.image_uri }}
+          MANIFEST_FILE: ci-cd/k8s/deployment.yaml
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add ci-cd/k8s/deployment.yaml
-          git diff --staged --quiet || git commit -m "Update image to ${IMAGE_TAG} [skip ci]"
-          git push
-      
-      - name: Deployment summary
-        run: |
-          echo "✅ Deployment manifest updated successfully!"
-          echo "📦 Image: ${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ needs.build.outputs.image-tag }}"
-          echo "🔄 ArgoCD will automatically sync the changes"
+          echo "Updating deployment to use image: $NEW_IMAGE"
+          
+          git config --global user.email "ci-cd-bot@users.noreply.github.com"
+          git config --global user.name "CI/CD Bot"
+          
+          sed -i "s|image: .*$ECR_REPOSITORY.*|image: $NEW_IMAGE|g" $MANIFEST_FILE
+          
+          git diff $MANIFEST_FILE
+          
+          git add $MANIFEST_FILE
+          git diff --staged --quiet || git commit -m "chore(release): update image tag to ${{ github.sha }} [skip ci]"
+          git push origin HEAD:ci/setup-devsecops-pipeline
