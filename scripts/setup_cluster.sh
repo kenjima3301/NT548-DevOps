@@ -21,6 +21,7 @@ aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
 
 echo "🚀 [2/6] Tạo Namespace $NAMESPACE..."
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+kubectl delete sc gp2 --ignore-not-found
 
 echo "🚀 [3/6] Tạo Secret cho ECR (regcred)..."
 TOKEN=$(aws ecr get-login-password --region $AWS_REGION)

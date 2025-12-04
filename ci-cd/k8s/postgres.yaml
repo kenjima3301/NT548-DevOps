@@ -6,6 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: gp2
   resources:
     requests:
       storage: 5Gi
@@ -50,6 +51,8 @@ spec:
               value: "postgres"
             - name: POSTGRES_PASSWORD
               value: "postgres"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"  
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data

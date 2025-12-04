@@ -21,6 +21,26 @@ resource "aws_iam_openid_connect_provider" "eks" {
   url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
 
+resource "aws_launch_template" "eks_nodes" {
+  name_prefix   = "${var.environment}-eks-node-lt-"
+  image_id      = ""
+  instance_type = "c7i-flex.large"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+    instance_metadata_tags      = "enabled"
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.environment}-eks-worker"
+    }
+  }
+}
+
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "standard-workers"
@@ -34,11 +54,28 @@ resource "aws_eks_node_group" "main" {
     min_size     = 1
   }
 
-  instance_types = ["c7i-flex.large"]
+  launch_template {
+    id      = aws_launch_template.eks_nodes.id
+    version = "$Latest"
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.node_worker,
     aws_iam_role_policy_attachment.node_cni,
     aws_iam_role_policy_attachment.node_registry,
+    aws_iam_role_policy_attachment.node_ebs
+  ]
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "aws-ebs-csi-driver"
+
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_node_group.main,
+    aws_iam_role_policy_attachment.node_ebs
   ]
 }
