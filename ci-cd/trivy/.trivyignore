@@ -1,0 +1,16 @@
+# Trivy ignore file for DoraShop
+# Format: CVE-ID or package name
+
+# Example: Ignore specific CVE (uncomment if needed)
+# CVE-2023-1234
+
+# Example: Ignore specific package vulnerabilities
+# python:3.11-slim
+
+# Ignore low severity vulnerabilities in development
+# Remove this in production
+# LOW
+
+# Ignore specific packages (example)
+# pip
+# setuptools

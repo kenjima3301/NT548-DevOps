@@ -1,0 +1,46 @@
+  apiVersion: argoproj.io/v1alpha1
+  kind: Application
+  metadata:
+    name: dorashop
+    namespace: argocd
+    labels:
+      app: dorashop
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+  spec:
+    project: default
+    
+    # Source repository configuration
+    source:
+      repoURL: https://github.com/vietdungnguyen2005/NT548-DevOps.git
+      targetRevision: HEAD
+      path: ci-cd/k8s
+      
+    # Destination cluster configuration
+    destination:
+      server: https://kubernetes.default.svc
+      namespace: dorashop
+      
+    # Sync policy configuration
+    syncPolicy:
+      automated:
+        prune: true
+        selfHeal: true
+        allowEmpty: false
+      syncOptions:
+        - CreateNamespace=true
+        - PrunePropagationPolicy=foreground
+        - PruneLast=true
+      retry:
+        limit: 5
+        backoff:
+          duration: 5s
+          factor: 2
+          maxDuration: 3m
+
+    # Health check configuration
+    ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+      - /spec/replicas
