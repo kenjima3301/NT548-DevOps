@@ -70,4 +70,5 @@ jobs:
           
           git add $MANIFEST_FILE
           git diff --staged --quiet || git commit -m "chore(release): update image tag to ${{ github.sha }} [skip ci]"
+          git pull origin $BRANCH_NAME --rebase
           git push origin HEAD:ci/setup-devsecops-pipeline
