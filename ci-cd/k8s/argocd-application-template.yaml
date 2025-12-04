@@ -12,7 +12,7 @@
     
     # Source repository configuration
     source:
-      repoURL: https://github.com/vietdungnguyen2005/NT548-DevOps.git
+      repoURL: https://github.com/kenjima3301/NT548-DevOps.git
       targetRevision: HEAD
       path: ci-cd/k8s
       
