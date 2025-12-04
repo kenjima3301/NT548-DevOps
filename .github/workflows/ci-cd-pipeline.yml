@@ -3,7 +3,7 @@ name: DoraShop CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, ci/setup-devsecops-pipeline]
   pull_request:
     branches: [main]
   workflow_dispatch:  
