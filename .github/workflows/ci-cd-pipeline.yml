@@ -104,6 +104,7 @@ jobs:
     needs: test-and-scan
     permissions:
       contents: write
+      security-events: write
 
     steps:
       - name: Checkout code
