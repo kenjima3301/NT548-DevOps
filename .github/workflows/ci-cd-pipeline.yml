@@ -59,7 +59,7 @@ jobs:
       - name: Run Django Tests with Coverage
         env:
           DJANGO_SETTINGS_MODULE: dorashop.settings
-          # PostgreSQL service đang chạy trên localhost:5432
+          PYTHONPATH: ${{ github.workspace }}/web/dorashop
           DB_ENGINE: django.db.backends.postgresql
           DB_NAME: dorashop
           DB_USER: postgres
@@ -69,7 +69,12 @@ jobs:
         run: |
           cd web/dorashop
           python manage.py migrate --noinput
-          pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing --cov-config=../../ci-cd/.coveragerc
+          cd ${{ github.workspace }}
+          pytest tests/ \
+            --cov=web/dorashop \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-config=ci-cd/.coveragerc
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
