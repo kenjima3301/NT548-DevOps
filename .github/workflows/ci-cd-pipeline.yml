@@ -44,6 +44,8 @@ jobs:
       - name: Run Django Tests with Coverage
         env:
           DJANGO_SETTINGS_MODULE: dorashop.settings
+          DB_ENGINE: django.db.backends.sqlite3
+          DB_NAME: ':memory:'
         run: |
           cd web/dorashop
           python manage.py migrate --noinput
