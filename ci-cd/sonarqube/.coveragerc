@@ -1,0 +1,24 @@
+[run]
+source = web/dorashop
+omit =
+    */migrations/*
+    */tests.py
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */staticfiles/*
+    */media/*
+    web/dorashop/manage.py
+    web/dorashop/dorashop/wsgi.py
+    web/dorashop/dorashop/asgi.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstract
