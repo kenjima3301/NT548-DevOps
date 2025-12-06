@@ -70,7 +70,9 @@ jobs:
           cd web/dorashop
           python manage.py migrate --noinput
           cd ${{ github.workspace }}
-          pytest tests/ \
+          # Chạy pytest với config và tests trong ci-cd/
+          pytest ci-cd/tests/ \
+            -c ci-cd/pytest.ini \
             --cov=web/dorashop \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
