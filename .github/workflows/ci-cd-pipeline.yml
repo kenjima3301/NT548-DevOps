@@ -15,11 +15,102 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
+  test-and-scan:
+    name: Test & Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: dorashop
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5  
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd web/dorashop
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-django
+
+      - name: Run Django Tests with Coverage
+        env:
+          DJANGO_SETTINGS_MODULE: dorashop.settings
+          PYTHONPATH: ${{ github.workspace }}/web/dorashop
+          DB_ENGINE: django.db.backends.postgresql
+          DB_NAME: dorashop
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_HOST: localhost
+          DB_PORT: 5432
+        run: |
+          cd web/dorashop
+          python manage.py migrate --noinput
+          cd ${{ github.workspace }}
+          # Chạy pytest từ ci-cd/sonarqube/
+          pytest ci-cd/sonarqube/tests/ \
+            -c ci-cd/sonarqube/pytest.ini \
+            --cov=web/dorashop \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-config=ci-cd/sonarqube/.coveragerc
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        with:
+          args: >
+            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties  
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+      - name: Run Trivy vulnerability scanner (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'web/dorashop'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+
   build-deploy:
     name: Build - Push - Update GitOps
     runs-on: ubuntu-latest
+    needs: test-and-scan
     permissions:
       contents: write
+      security-events: write
 
     steps:
       - name: Checkout code
@@ -40,7 +131,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Docker Image
+      - name: Build Docker Image
         id: build-image
         env:
           REGISTRY: ${{ env.ECR_REGISTRY_URL }}
@@ -51,10 +142,31 @@ jobs:
                        -t $REGISTRY/$REPO:latest \
                        -f web/dorashop/Dockerfile web/dorashop/
           
+          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy vulnerability scanner (Docker Image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy Image results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: Push Docker Image to ECR
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
+        run: |
           docker push $REGISTRY/$REPO:$TAG
           docker push $REGISTRY/$REPO:latest
-          
-          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
 
       - name: Update Kubernetes Manifest
         env:
