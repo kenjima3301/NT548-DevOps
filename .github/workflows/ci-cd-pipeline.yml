@@ -69,6 +69,7 @@ jobs:
         run: |
           cd web/dorashop
           python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
           cd ${{ github.workspace }}
           # Chạy pytest từ ci-cd/sonarqube/
           pytest ci-cd/sonarqube/tests/ \

@@ -50,7 +50,7 @@ class TestComicModel:
             price=Decimal("42.50"),
             stock=30
         )
-        assert comic.image.name == ""
+        assert not comic.image
 
     def test_comic_update(self):
         """Test cập nhật thông tin comic"""
