@@ -5,7 +5,7 @@ on:
     branches: 
       - main
       - develop
-      - 'ci/setup-devsecops-pipeline'
+      - 'test'
   workflow_dispatch:
 
 env:
