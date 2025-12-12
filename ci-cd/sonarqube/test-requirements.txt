@@ -1,0 +1,16 @@
+# Testing Requirements
+# Cài đặt: pip install -r test-requirements.txt
+
+# Core testing framework
+pytest>=7.4.0
+pytest-django>=4.5.2
+pytest-cov>=4.1.0
+
+# Code coverage
+coverage>=7.2.0
+
+# Additional testing utilities
+pytest-xdist>=3.3.0  # Parallel test execution
+pytest-mock>=3.11.0  # Mocking utilities
+factory-boy>=3.3.0   # Test data factories (optional)
+faker>=19.0.0        # Fake data generation (optional)
