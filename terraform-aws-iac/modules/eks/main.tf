@@ -10,7 +10,10 @@ resource "aws_eks_cluster" "main" {
 
   enabled_cluster_log_types = ["authenticator", "controllerManager"]
 
-  depends_on = [aws_iam_role_policy_attachment.cluster_policy]
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster_policy,
+    aws_cloudwatch_log_group.eks_cluster_log
+  ]
 }
 
 data "tls_certificate" "eks" {
@@ -98,4 +101,9 @@ resource "aws_eks_addon" "cloudwatch_observability" {
 resource "aws_cloudwatch_log_group" "eks_cluster_log" {
   name              = "/aws/eks/${var.environment}-cluster/cluster"
   retention_in_days = 1
+
+  tags = {
+    Environment = var.environment
+    Application = "Dorashop-EKS"
+  }
 }

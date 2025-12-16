@@ -1,8 +1,0 @@
-# Ví dụ cho Mac/Linux
-ssh -i "~/.ssh/my-aws-key" ubuntu@18.140.2.72
-
-# Ví dụ cho Windows (dùng đường dẫn file private key)
-ssh -i "thu-muc-1/thu-muc-2/my-aws-key" ubuntu@18.140.2.72
-
-kubectl get svc argocd-server -n argocd
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
