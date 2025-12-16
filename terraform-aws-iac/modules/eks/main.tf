@@ -8,6 +8,8 @@ resource "aws_eks_cluster" "main" {
     endpoint_private_access = true
   }
 
+  enabled_cluster_log_types = ["authenticator", "controllerManager"]
+
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }
 
@@ -78,4 +80,22 @@ resource "aws_eks_addon" "ebs_csi" {
     aws_eks_node_group.main,
     aws_iam_role_policy_attachment.node_ebs
   ]
+}
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "amazon-cloudwatch-observability"
+
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_node_group.main,
+    aws_iam_role_policy_attachment.node_cloudwatch
+  ]
+}
+
+resource "aws_cloudwatch_log_group" "eks_cluster_log" {
+  name              = "/aws/eks/${var.environment}-cluster/cluster"
+  retention_in_days = 1
 }

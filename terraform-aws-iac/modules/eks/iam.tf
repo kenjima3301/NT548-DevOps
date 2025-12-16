@@ -45,3 +45,8 @@ resource "aws_iam_role_policy_attachment" "node_ebs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
   role       = aws_iam_role.node_role.name
 }
+
+resource "aws_iam_role_policy_attachment" "node_cloudwatch" {
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  role       = aws_iam_role.node_role.name
+}
