@@ -1,0 +1,40 @@
+name: Update Submodule
+
+on:
+  repository_dispatch:
+    types: [update-submodule]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout dùng PAT
+      - name: Checkout DevOps Repo
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.DEVOPS_PAT }}
+          submodules: true
+          fetch-depth: 0
+
+      # 2. Update Submodule
+      - name: Update Submodule Code
+        run: |
+          git submodule update --init --recursive
+          cd web/dorashop
+          git fetch origin
+          git checkout ${{ github.event.client_payload.sha }}
+          cd ../..
+
+      # 3. Commit & Push
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Auto-update submodule to ${{ github.event.client_payload.sha }}"
+            git push origin main
+          else
+            echo "No changes."
+          fi
