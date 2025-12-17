@@ -3,29 +3,51 @@ name: Update Submodule
 on:
   repository_dispatch:
     types: [update-submodule]
+  
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Nhập Commit SHA của Web (Để trống sẽ lấy mới nhất của main)'
+        required: false
+        type: string
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout dùng PAT
+      # 1. Checkout Code
       - name: Checkout DevOps Repo
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.DEVOPS_PAT }}
+          token: ${{ secrets.DEVOPS_PAT }} 
           submodules: true
           fetch-depth: 0
 
       # 2. Update Submodule
       - name: Update Submodule Code
         run: |
-          git submodule update --init --recursive
           cd web/dorashop
           git fetch origin
-          git checkout ${{ github.event.client_payload.sha }}
+          
+          # Logic chọn Commit ID
+          if [ -n "${{ github.event.client_payload.sha }}" ]; then
+            echo "🔥 Mode: Auto Trigger from Web"
+            TARGET="${{ github.event.client_payload.sha }}"
+            
+          elif [ -n "${{ inputs.sha }}" ]; then
+            echo "👋 Mode: Manual Input"
+            TARGET="${{ inputs.sha }}"
+            
+          else
+            echo "⚡ Mode: Manual Default (Latest Main)"
+            TARGET="origin/main"
+          fi
+
+          echo "Checking out to: $TARGET"
+          git checkout $TARGET
           cd ../..
 
-      # 3. Commit & Push
+      # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -33,8 +55,8 @@ jobs:
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "Auto-update submodule to ${{ github.event.client_payload.sha }}"
+            git commit -m "Update submodule to $TARGET"
             git push origin main
           else
-            echo "No changes."
+            echo "✅ Submodule is already up to date. No changes."
           fi
