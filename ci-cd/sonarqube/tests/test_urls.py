@@ -41,7 +41,7 @@ class TestURLPatterns:
 
     def test_cart_summary_url(self):
         """Test URL cho cart_summary"""
-        url = reverse('cart_summary')
+        url = reverse('cart:summary')
         assert url == '/cart/'
         assert resolve(url).func == views.cart_summary
 
