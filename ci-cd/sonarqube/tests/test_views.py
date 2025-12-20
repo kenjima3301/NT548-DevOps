@@ -116,13 +116,15 @@ class TestProductDetailView:
 class TestCartSummaryView:
     """Test suite cho cart_summary view"""
 
-    def test_cart_summary_view_status_code(self, client):
+    def test_cart_summary_view_status_code(self, client, django_user):
         """Test cart_summary view trả về status 200"""
+        client.force_login(django_user)
         response = client.get(reverse('cart:summary'))
         assert response.status_code == 200
 
-    def test_cart_summary_view_template(self, client):
+    def test_cart_summary_view_template(self, client, django_user):
         """Test cart_summary view sử dụng đúng template"""
+        client.force_login(django_user)
         response = client.get(reverse('cart:summary'))
         assert 'cart/summary.html' in [t.name for t in response.templates]
 
