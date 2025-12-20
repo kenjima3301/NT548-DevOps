@@ -2,6 +2,7 @@
 import pytest
 from django.urls import reverse, resolve
 from products import views
+from cart import views as cart_views
 
 
 class TestURLPatterns:
@@ -43,7 +44,7 @@ class TestURLPatterns:
         """Test URL cho cart_summary"""
         url = reverse('cart:summary')
         assert url == '/cart/'
-        assert resolve(url).func == views.cart_summary
+        assert resolve(url).func == cart_views.cart_summary
 
     def test_login_url(self):
         """Test URL cho login"""
