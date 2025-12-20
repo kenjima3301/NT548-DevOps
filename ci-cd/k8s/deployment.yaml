@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:e2c96dcf6df795526748931a4e47614763093dbc
+        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:b030d96eb315e55a30e80f5bd55f512d7eb38fa1
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
