@@ -118,12 +118,12 @@ class TestCartSummaryView:
 
     def test_cart_summary_view_status_code(self, client):
         """Test cart_summary view trả về status 200"""
-        response = client.get(reverse('cart_summary'))
+        response = client.get(reverse('cart:summary'))
         assert response.status_code == 200
 
     def test_cart_summary_view_template(self, client):
         """Test cart_summary view sử dụng đúng template"""
-        response = client.get(reverse('cart_summary'))
+        response = client.get(reverse('cart:summary'))
         assert 'cart/summary.html' in [t.name for t in response.templates]
 
 

@@ -87,7 +87,7 @@ class TestURLResolving:
     def test_resolve_cart_url(self):
         """Test resolve /cart/"""
         resolver = resolve('/cart/')
-        assert resolver.view_name == 'cart_summary'
+        assert resolver.view_name == 'cart:summary'
 
     def test_resolve_auth_urls(self):
         """Test resolve các auth URLs"""
@@ -110,7 +110,7 @@ class TestURLNamespaces:
             'comic_list',
             'home',
             'product_list',
-            'cart_summary',
+            'cart:summary',
             'login',
             'register',
             'logout'
