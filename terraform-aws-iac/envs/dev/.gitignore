@@ -16,6 +16,7 @@ override.tf.json
 # === Logs and crash dumps ===
 *.log
 crash.log
+.txt
 
 # === Sensitive environment / config files ===
 .env
