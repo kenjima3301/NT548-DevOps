@@ -36,3 +36,15 @@ variable "private_subnet_cidr" {
   description = "IP for Private subnet"
   type        = string
 }
+
+variable "app_s3_access_key" {
+  description = "Access Key for Web App to access S3"
+  type        = string
+  sensitive   = true
+}
+
+variable "app_s3_secret_key" {
+  description = "Secret Key for Web App to access S3"
+  type        = string
+  sensitive   = true
+}
