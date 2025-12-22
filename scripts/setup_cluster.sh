@@ -91,6 +91,7 @@ else
   kubectl create secret generic dorashop-aws-secrets \
     --from-literal=AWS_ACCESS_KEY_ID=$MY_APP_ACCESS_KEY \
     --from-literal=AWS_SECRET_ACCESS_KEY=$MY_APP_SECRET_KEY \
+    --from-literal=AWS_STORAGE_BUCKET_NAME=dorashop-media-assets-dev \
     --namespace=$NAMESPACE \
     --dry-run=client -o yaml | kubectl apply -f -
     
