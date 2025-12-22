@@ -83,7 +83,9 @@ jobs:
         uses: SonarSource/sonarcloud-github-action@master
         with:
           args: >
-            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties  
+            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties
+            -Dsonar.projectBaseDir=${{ github.workspace }}
+            -Dsonar.scm.provider=git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
