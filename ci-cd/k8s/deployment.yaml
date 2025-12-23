@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dorashop-web
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: dorashop-web
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:1486848210fc89769545361a3344c231d9fd81c9
+        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:02d88c779ed827f34fc84dde095206b3ec7c00e7
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
