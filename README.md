@@ -1,4 +1,4 @@
-# Đồ án môn học NT548 - Công nghệ DevOps và Ứng dụng.
+# Đồ án môn học NT548 - Công nghệ DevOps và Ứng dụng
 
 ## 👥 Danh sách thành viên nhóm
 
