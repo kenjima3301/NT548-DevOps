@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app:c523e747fd79108bce61b9d8c21df1ec8f8ea4f6
+        image: dorashop-web
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

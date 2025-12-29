@@ -1,11 +1,23 @@
 name: Stable CI/CD Pipeline
 
 on:
+  pull_request:
+    branches: 
+      - main
+      - test
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'web/dorashop/**'
+      - 'ci-cd/k8s/**'
+      - 'ci-cd/sonarqube/**'
+      - '.github/workflows/**'
   push:
     branches: 
       - main
-      - develop
-      - 'test'
+      - test
+    paths:
+      - 'web/dorashop/**'
+      - 'ci-cd/k8s/**'
   workflow_dispatch:
 
 env:
@@ -15,9 +27,39 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
+  # Detect which paths changed to skip unnecessary jobs
+  path-filter:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      k8s: ${{ steps.filter.outputs.k8s }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check path filters
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'web/dorashop/**'
+            k8s:
+              - 'ci-cd/k8s/**'
+            workflows:
+              - '.github/workflows/**'
+
   test-and-scan:
     name: Test & Security Scan
     runs-on: ubuntu-latest
+    needs: path-filter
+    # Only run if web code or k8s manifests changed
+    if: |
+      needs.path-filter.outputs.web == 'true' ||
+      needs.path-filter.outputs.k8s == 'true' ||
+      needs.path-filter.outputs.workflows == 'true'
     permissions:
       contents: read
       security-events: write
@@ -110,7 +152,11 @@ jobs:
   build-deploy:
     name: Build - Push - Update GitOps
     runs-on: ubuntu-latest
-    needs: test-and-scan
+    needs: [path-filter, test-and-scan]
+    # Only run on push to main/develop and if web or k8s changed
+    if: |
+      github.event_name == 'push' &&
+      (needs.path-filter.outputs.web == 'true' || needs.path-filter.outputs.k8s == 'true')
     permissions:
       contents: write
       security-events: write
@@ -173,18 +219,28 @@ jobs:
 
       - name: Update Kubernetes Manifest
         env:
-          NEW_IMAGE: ${{ steps.build-image.outputs.image_uri }}
-          MANIFEST_FILE: ci-cd/k8s/deployment.yaml
-          CURRENT_BRANCH: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ github.sha }}
+          ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
         run: |
-          echo "Updating deployment to use image: $NEW_IMAGE on branch $CURRENT_BRANCH"
+          echo "Updating $ENVIRONMENT overlay with image tag: $IMAGE_TAG"
           
           git config --global user.email "ci-cd-bot@users.noreply.github.com"
           git config --global user.name "CI/CD Bot"
           
-          sed -i "s|image: .*$ECR_REPOSITORY.*|image: $NEW_IMAGE|g" $MANIFEST_FILE
+          # Navigate to the appropriate overlay
+          cd ci-cd/k8s/overlays/$ENVIRONMENT
           
-          git add $MANIFEST_FILE
-          git diff --staged --quiet || git commit -m "chore(release): update image tag to ${{ github.sha }} [skip ci]"
-          git pull origin $CURRENT_BRANCH --rebase        
-          git push origin HEAD:$CURRENT_BRANCH
+          # Update image tag using kustomize
+          kustomize edit set image dorashop-web=${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          
+          # Commit and push changes
+          git add kustomization.yaml
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore(gitops): update $ENVIRONMENT image to $IMAGE_TAG [skip ci]"
+            git pull origin ${{ github.ref_name }} --rebase
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ GitOps manifest updated successfully"
+          fi
