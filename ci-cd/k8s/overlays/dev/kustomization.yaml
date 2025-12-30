@@ -3,24 +3,24 @@ kind: Kustomization
 
 namespace: dorashop-dev
 resources:
-  - ../../base
+- ../../base
 
 namePrefix: dev-
 
 replicas:
-  - name: dorashop-web
-    count: 1
+- count: 1
+  name: dorashop-web
 
 images:
-  - name: dorashop-web
-    newName: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app
-    newTag: latest
+- name: dorashop-web
+  newName: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app
+  newTag: c582b115ef82a9c8d60797cdd1612f5a0128d2b6
 
 commonLabels:
   environment: development
 
 configMapGenerator:
-  - name: app-config
-    literals:
-      - ENVIRONMENT=development
-      - DEBUG=true
+- literals:
+  - ENVIRONMENT=development
+  - DEBUG=true
+  name: app-config
