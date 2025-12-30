@@ -74,7 +74,7 @@ resource "null_resource" "cluster_bootstrap" {
   }
 
   provisioner "local-exec" {
-    command = "bash ../../../scripts/setup_cluster.sh ${module.eks.cluster_name} ${var.aws_region} ${aws_ecr_repository.my_app.repository_url} > setup.log 2>&1"
+    command = "bash ../../../scripts/validate-kustomize.sh && bash ../../../scripts/setup_cluster.sh && bash ../../../scripts/deploy-argocd-apps.sh ${module.eks.cluster_name} ${var.aws_region} ${aws_ecr_repository.my_app.repository_url} > setup.log 2>&1"
 
     environment = {
       MY_APP_ACCESS_KEY = var.app_s3_access_key
