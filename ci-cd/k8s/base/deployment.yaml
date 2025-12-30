@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dorashop-web
-  namespace: dorashop
   labels:
     app: dorashop-web
 spec:

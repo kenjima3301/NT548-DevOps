@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd ../../..
 
 echo "🔍 Validating Kustomize configurations..."
 echo ""

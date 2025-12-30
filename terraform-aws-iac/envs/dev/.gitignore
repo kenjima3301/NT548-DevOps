@@ -56,3 +56,6 @@ ssh_key
 # === OS-specific files ===
 .DS_Store
 Thumbs.db
+
+setup.log
+access_info.txt
