@@ -57,29 +57,29 @@ echo "🚀 [5/7] Patch LoadBalancer cho ArgoCD..."
 kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
 
 # --- 6. ARGOCD APP ---
-echo "🚀 [6/7] Khai báo App với ArgoCD (GitOps)..."
-cat <<EOF | kubectl apply -f -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: dorashop
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: $GIT_REPO
-    targetRevision: HEAD
-    path: $APP_PATH
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: $NAMESPACE
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-EOF
+#echo "🚀 [6/7] Khai báo App với ArgoCD (GitOps)..."
+#cat <<EOF | kubectl apply -f -
+#apiVersion: argoproj.io/v1alpha1
+#kind: Application
+#metadata:
+#  name: dorashop
+#  namespace: argocd
+#spec:
+#  project: default
+#  source:
+#    repoURL: $GIT_REPO
+#    targetRevision: HEAD
+#    path: $APP_PATH
+#  destination:
+#    server: https://kubernetes.default.svc
+#    namespace: $NAMESPACE
+#  syncPolicy:
+#    automated:
+#      prune: true
+#      selfHeal: true
+#    syncOptions:
+#      - CreateNamespace=true
+#EOF
 
 echo "🚀 Tạo Secret S3 Credentials cho Web App..."
 
