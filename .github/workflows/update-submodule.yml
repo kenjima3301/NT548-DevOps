@@ -49,14 +49,29 @@ jobs:
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
+        id: commit-push
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'actions@github.com'
+          git config --global user.name 'actions-user'
+          git config --global user.email 'actions-user@noreply.github.com'
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "Update submodule to $TARGET"
+            git commit -m "chore: update submodule dorashop to $TARGET"
             git push origin main
+            echo "has_changes=true" >> $GITHUB_OUTPUT
           else
             echo "✅ Submodule is already up to date. No changes."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
+      
+      # 4. Trigger CI/CD Pipeline manually
+      - name: Trigger CI/CD Pipeline
+        if: steps.commit-push.outputs.has_changes == 'true'
+        run: |
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.DEVOPS_PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/kenjima3301/NT548-DevOps/actions/workflows/ci-cd-pipeline.yml/dispatches \
+            -d '{"ref":"main"}'
