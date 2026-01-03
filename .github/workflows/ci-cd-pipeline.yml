@@ -20,6 +20,7 @@ on:
       - 'web/dorashop'
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 env:
