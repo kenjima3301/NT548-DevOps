@@ -14,6 +14,7 @@ on:
     paths:
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
+      - '.gitmodules'
   workflow_dispatch:
 
 env:
@@ -28,14 +29,28 @@ jobs:
     name: Detect Changed Paths
     runs-on: ubuntu-latest
     outputs:
-      cart: ${{ steps.filter.outputs.cart }}
-      products: ${{ steps.filter.outputs.products }}
-      other: ${{ steps.filter.outputs.other }}
+      cart: ${{ steps.filter.outputs.cart || steps.submodule-check.outputs.has_submodule_change }}
+      products: ${{ steps.filter.outputs.products || steps.submodule-check.outputs.has_submodule_change }}
+      other: ${{ steps.filter.outputs.other || steps.submodule-check.outputs.has_submodule_change }}
       k8s: ${{ steps.filter.outputs.k8s }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for submodule changes
+        id: submodule-check
+        run: |
+          # Check if web/dorashop submodule pointer changed
+          if git diff HEAD~1 HEAD --submodule=short | grep -q 'web/dorashop'; then
+            echo "has_submodule_change=true" >> $GITHUB_OUTPUT
+            echo "✅ Submodule web/dorashop changed - will trigger all tests"
+          else
+            echo "has_submodule_change=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No submodule changes detected"
+          fi
 
       - name: Check path filters
         uses: dorny/paths-filter@v3
