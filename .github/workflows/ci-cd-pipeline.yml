@@ -1,25 +1,24 @@
-name: CI/CD Pipeline
+name: Stable CI/CD Pipeline
 
 on:
-  repository_dispatch:
-    types: [service-build]
+  pull_request:
+    branches: 
+      - main
+      - test
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'web/dorashop/**'
+      - 'ci-cd/k8s/**'
+      - 'ci-cd/sonarqube/**'
+      - '.github/workflows/**'
+  push:
+    branches: 
+      - main
+      - test
+    paths:
+      - 'web/dorashop/**'
+      - 'ci-cd/k8s/**'
   workflow_dispatch:
-    inputs:
-      changed_services:
-        description: 'Services to build (cart, products, all, frontend)'
-        required: true
-        type: string
-        default: 'all'
-      change_type:
-        description: 'Type of change (critical, core, service, frontend, config, normal)'
-        required: false
-        type: string
-        default: 'normal'
-      critical_files:
-        description: 'Critical files changed (true/false)'
-        required: false
-        type: string
-        default: 'false'
 
 env:
   AWS_REGION: ap-southeast-1
@@ -28,75 +27,43 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  determine-services:
-    name: Determine Services to Build
+  # Detect which paths changed to skip unnecessary jobs
+  path-filter:
+    name: Detect Changed Paths
     runs-on: ubuntu-latest
     outputs:
-      build_cart: ${{ steps.check.outputs.build_cart }}
-      build_products: ${{ steps.check.outputs.build_products }}
-      services_list: ${{ steps.check.outputs.services_list }}
-      change_type: ${{ steps.check.outputs.change_type }}
-      critical_files: ${{ steps.check.outputs.critical_files }}
+      web: ${{ steps.filter.outputs.web }}
+      k8s: ${{ steps.filter.outputs.k8s }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
-      - name: Check Services
-        id: check
-        run: |
-          # Get services from payload or input
-          if [ -n "${{ github.event.client_payload.changed_services }}" ]; then
-            SERVICES="${{ github.event.client_payload.changed_services }}"
-          else
-            SERVICES="${{ inputs.changed_services }}"
-          fi
-          
-          # Get change type
-          if [ -n "${{ github.event.client_payload.change_type }}" ]; then
-            CHANGE_TYPE="${{ github.event.client_payload.change_type }}"
-          else
-            CHANGE_TYPE="${{ inputs.change_type }}"
-          fi
-          
-          # Get critical flag
-          if [ -n "${{ github.event.client_payload.critical_files }}" ]; then
-            CRITICAL="${{ github.event.client_payload.critical_files }}"
-          else
-            CRITICAL="${{ inputs.critical_files }}"
-          fi
-          
-          echo "services_list=$SERVICES" >> $GITHUB_OUTPUT
-          echo "change_type=$CHANGE_TYPE" >> $GITHUB_OUTPUT
-          echo "critical_files=$CRITICAL" >> $GITHUB_OUTPUT
-          
-          # Determine what to build
-          if [[ "$SERVICES" == *"cart"* ]] || [[ "$SERVICES" == "all" ]]; then
-            echo "build_cart=true" >> $GITHUB_OUTPUT
-            echo "🛒 Will build cart service"
-          else
-            echo "build_cart=false" >> $GITHUB_OUTPUT
-            echo "⊘ Skip cart service"
-          fi
-          
-          if [[ "$SERVICES" == *"products"* ]] || [[ "$SERVICES" == "all" ]]; then
-            echo "build_products=true" >> $GITHUB_OUTPUT
-            echo "📦 Will build products service"
-          else
-            echo "build_products=false" >> $GITHUB_OUTPUT
-            echo "⊘ Skip products service"
-          fi
-          
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 Build Plan:"
-          echo "   Services: $SERVICES"
-          echo "   Type: $CHANGE_TYPE"
-          echo "   Critical: $CRITICAL"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Test Cart Service
-  test-cart:
-    name: Test Cart Service
+      - name: Check path filters
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'web/dorashop/**'
+            k8s:
+              - 'ci-cd/k8s/**'
+            workflows:
+              - '.github/workflows/**'
+
+  test-and-scan:
+    name: Test & Security Scan
     runs-on: ubuntu-latest
-    needs: determine-services
-    if: needs.determine-services.outputs.build_cart == 'true'
-    
+    needs: path-filter
+    # Only run if web code or k8s manifests changed
+    if: |
+      needs.path-filter.outputs.web == 'true' ||
+      needs.path-filter.outputs.k8s == 'true' ||
+      needs.path-filter.outputs.workflows == 'true'
+    permissions:
+      contents: read
+      security-events: write
+
     services:
       postgres:
         image: postgres:15-alpine
@@ -110,8 +77,8 @@ jobs:
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
-    
+          --health-retries 5  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -131,7 +98,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-django
 
-      - name: Run Cart Tests with Coverage
+      - name: Run Django Tests with Coverage
         env:
           DJANGO_SETTINGS_MODULE: dorashop.settings
           PYTHONPATH: ${{ github.workspace }}/web/dorashop
@@ -146,205 +113,134 @@ jobs:
           python manage.py migrate --noinput
           python manage.py collectstatic --noinput
           cd ${{ github.workspace }}
+          # Chạy pytest từ ci-cd/sonarqube/
           pytest ci-cd/sonarqube/tests/ \
             -c ci-cd/sonarqube/pytest.ini \
-            --cov=web/dorashop/cart \
-            --cov-report=xml:coverage-cart.xml \
-            --cov-report=term-missing
+            --cov=web/dorashop \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-config=ci-cd/sonarqube/.coveragerc
 
-      - name: Upload Cart Coverage
-        uses: actions/upload-artifact@v4
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
         with:
-          name: coverage-cart
-          path: coverage-cart.xml
-          retention-days: 1
-
-  # Test Products Service
-  test-products:
-    name: Test Products Service
-    runs-on: ubuntu-latest
-    needs: determine-services
-    if: needs.determine-services.outputs.build_products == 'true'
-    
-    services:
-      postgres:
-        image: postgres:15-alpine
+          args: >
+            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties
+            -Dsonar.projectBaseDir=${{ github.workspace }}
+            -Dsonar.scm.provider=git
         env:
-          POSTGRES_DB: dorashop
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+      - name: Run Trivy vulnerability scanner (Filesystem)
+        uses: aquasecurity/trivy-action@master
         with:
-          fetch-depth: 0
-          submodules: recursive
+          scan-type: 'fs'
+          scan-ref: 'web/dorashop'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          sarif_file: 'trivy-fs-results.sarif'
 
-      - name: Install dependencies
-        run: |
-          cd web/dorashop
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-django
-
-      - name: Run Products Tests with Coverage
-        env:
-          DJANGO_SETTINGS_MODULE: dorashop.settings
-          PYTHONPATH: ${{ github.workspace }}/web/dorashop
-          DB_ENGINE: django.db.backends.postgresql
-          DB_NAME: dorashop
-          DB_USER: postgres
-          DB_PASSWORD: postgres
-          DB_HOST: localhost
-          DB_PORT: 5432
-        run: |
-          cd web/dorashop
-          python manage.py migrate --noinput
-          python manage.py collectstatic --noinput
-          cd ${{ github.workspace }}
-          pytest ci-cd/sonarqube/tests/ \
-            -c ci-cd/sonarqube/pytest.ini \
-            --cov=web/dorashop/products \
-            --cov-report=xml:coverage-products.xml \
-            --cov-report=term-missing
-
-      - name: Upload Products Coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-products
-          path: coverage-products.xml
-          retention-days: 1
-
-  # Security Scan (sử dụng reusable workflow)
-  security-scan:
-    name: Security Scan
-    needs: [determine-services, test-cart, test-products]
-    if: |
-      always() &&
-      (needs.test-cart.result == 'success' || needs.test-cart.result == 'skipped') &&
-      (needs.test-products.result == 'success' || needs.test-products.result == 'skipped')
-    uses: ./.github/workflows/_reusable-security-scan.yml
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Build & Push Image (chỉ 1 image vì monolith)
-  build-push:
-    name: Build & Push Image
-    needs: [determine-services, test-cart, test-products, security-scan]
-    if: |
-      (needs.test-cart.result == 'success' || needs.test-cart.result == 'skipped') &&
-      (needs.test-products.result == 'success' || needs.test-products.result == 'skipped') &&
-      needs.security-scan.result == 'success'
-    uses: ./.github/workflows/_reusable-build-push.yml
-    with:
-      service_name: dorashop
-      dockerfile_path: web/dorashop
-      context_path: web/dorashop
-      ecr_repository: my-web-app
-      aws_region: ap-southeast-1
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-  # Update GitOps Manifests
-  update-manifests:
-    name: Update GitOps Manifests
-    needs: [determine-services, build-push]
-    if: needs.build-push.result == 'success'
+  build-deploy:
+    name: Build - Push - Update GitOps
     runs-on: ubuntu-latest
+    needs: [path-filter, test-and-scan]
+    # Only run on push to main/develop and if web or k8s changed
+    if: |
+      github.event_name == 'push' &&
+      (needs.path-filter.outputs.web == 'true' || needs.path-filter.outputs.k8s == 'true')
     permissions:
       contents: write
-    
+      security-events: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          submodules: recursive
+          # token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Setup Kustomize
-        run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
 
-      - name: Update Kustomize Image
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        id: build-image
         env:
-          IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
-          ENVIRONMENT: dev
-          SERVICES: ${{ needs.determine-services.outputs.services_list }}
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
         run: |
-          echo "📦 Updating $ENVIRONMENT with services: $SERVICES"
-          echo "📦 Image tag: $IMAGE_TAG"
+          docker build -t $REGISTRY/$REPO:$TAG \
+                       -t $REGISTRY/$REPO:latest \
+                       -f web/dorashop/Dockerfile web/dorashop/
           
+          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy vulnerability scanner (Docker Image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy Image results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: Push Docker Image to ECR
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker push $REGISTRY/$REPO:$TAG
+          docker push $REGISTRY/$REPO:latest
+
+      - name: Update Kubernetes Manifest
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+        run: |
+          echo "Updating $ENVIRONMENT overlay with image tag: $IMAGE_TAG"
+          
+          git config --global user.email "ci-cd-bot@users.noreply.github.com"
+          git config --global user.name "CI/CD Bot"
+          
+          # Navigate to the appropriate overlay
           cd ci-cd/k8s/overlays/$ENVIRONMENT
           
-          # Update image tag
+          # Update image tag using kustomize
           kustomize edit set image dorashop-web=${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           
-          # Configure git
-          git config user.name "CI/CD Bot"
-          git config user.email "ci-cd-bot@users.noreply.github.com"
-          
-          # Commit and push
+          # Commit and push changes
           git add kustomization.yaml
           
           if git diff --staged --quiet; then
-            echo "ℹ️  No changes to commit"
+            echo "No changes to commit"
           else
-            git commit -m "chore(gitops): update $ENVIRONMENT [$SERVICES] to $IMAGE_TAG [skip ci]"
-            git pull --rebase
-            git push
-            echo "✅ Manifest updated successfully"
+            git commit -m "chore(gitops): update $ENVIRONMENT image to $IMAGE_TAG [skip ci]"
+            git pull origin ${{ github.ref_name }} --rebase
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ GitOps manifest updated successfully"
           fi
-
-  # Summary Job
-  summary:
-    name: Deployment Summary
-    needs: [determine-services, test-cart, test-products, security-scan, build-push, update-manifests]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Display Summary
-        run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 SERVICE-SPECIFIC CI/CD SUMMARY"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "🎯 Services: ${{ needs.determine-services.outputs.services_list }}"
-          echo "🔧 Type: ${{ needs.determine-services.outputs.change_type }}"
-          echo "🔴 Critical: ${{ needs.determine-services.outputs.critical_files }}"
-          echo ""
-          echo "📋 Job Results:"
-          echo "├─ Cart Test: ${{ needs.test-cart.result }}"
-          echo "├─ Products Test: ${{ needs.test-products.result }}"
-          echo "├─ Security Scan: ${{ needs.security-scan.result }}"
-          echo "├─ Build & Push: ${{ needs.build-push.result }}"
-          echo "└─ Update Manifests: ${{ needs.update-manifests.result }}"
-          echo ""
-          
-          # Overall status
-          if [[ "${{ needs.update-manifests.result }}" == "success" ]]; then
-            echo "✅ DEPLOYMENT SUCCESSFUL"
-            echo "🚀 Changes will be deployed by ArgoCD"
-          elif [[ "${{ needs.build-push.result }}" == "success" ]]; then
-            echo "✅ BUILD SUCCESSFUL"
-            echo "⚠️  Manifest update failed or skipped"
-          else
-            echo "❌ DEPLOYMENT FAILED"
-            echo "🔍 Check logs above for details"
-          fi
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
