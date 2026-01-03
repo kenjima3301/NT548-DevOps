@@ -10,20 +10,47 @@ on:
         description: 'Nhập Commit SHA của Web (Để trống sẽ lấy mới nhất của main)'
         required: false
         type: string
+      changed_services:
+        description: 'Services đã thay đổi (cart, products, hoặc cart,products)'
+        required: false
+        type: string
+        default: 'cart,products'
+      change_type:
+        description: 'Type of change (critical, core, service, frontend, config, normal)'
+        required: false
+        type: string
+        default: 'normal'
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      changed_services: ${{ steps.set-output.outputs.services }}
+      change_type: ${{ steps.set-output.outputs.change_type }}
+      critical_files: ${{ steps.set-output.outputs.critical_files }}
     steps:
-      # 1. Checkout Code
       - name: Checkout DevOps Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.DEVOPS_PAT }} 
           submodules: true
           fetch-depth: 0
 
-      # 2. Update Submodule
+      - name: Display Event Info
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📥 Received Update from Submodule"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔖 SHA: ${{ github.event.client_payload.sha }}"
+          echo "🏷️  Branch: ${{ github.event.client_payload.branch }}"
+          echo "📦 Services: ${{ github.event.client_payload.changed_services }}"
+          echo "🔧 Type: ${{ github.event.client_payload.change_type }}"
+          echo "🔴 Critical: ${{ github.event.client_payload.critical_files }}"
+          echo "👤 Author: ${{ github.event.client_payload.author }}"
+          echo "💬 Message: ${{ github.event.client_payload.commit_message }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
       - name: Update Submodule Code
         run: |
           cd web/dorashop
@@ -47,16 +74,74 @@ jobs:
           git checkout $TARGET
           cd ../..
 
-      # 3. Commit & Push (Chỉ push nếu có thay đổi)
+      - name: Set Output Metadata
+        id: set-output
+        run: |
+          # Get services
+          if [ -n "${{ github.event.client_payload.changed_services }}" ]; then
+            SERVICES="${{ github.event.client_payload.changed_services }}"
+          elif [ -n "${{ inputs.changed_services }}" ]; then
+            SERVICES="${{ inputs.changed_services }}"
+          else
+            SERVICES="all"
+          fi
+          
+          # Get change type
+          if [ -n "${{ github.event.client_payload.change_type }}" ]; then
+            CHANGE_TYPE="${{ github.event.client_payload.change_type }}"
+          elif [ -n "${{ inputs.change_type }}" ]; then
+            CHANGE_TYPE="${{ inputs.change_type }}"
+          else
+            CHANGE_TYPE="normal"
+          fi
+          
+          # Get critical flag
+          if [ -n "${{ github.event.client_payload.critical_files }}" ]; then
+            CRITICAL="${{ github.event.client_payload.critical_files }}"
+          else
+            CRITICAL="false"
+          fi
+          
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "change_type=$CHANGE_TYPE" >> $GITHUB_OUTPUT
+          echo "critical_files=$CRITICAL" >> $GITHUB_OUTPUT
+          
+          echo "🎯 Pipeline will build: $SERVICES"
+          echo "🔧 Change type: $CHANGE_TYPE"
+          echo "🔴 Critical: $CRITICAL"
+
       - name: Commit and Push
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
           
           if [[ -n $(git status -s) ]]; then
+            COMMIT_MSG="chore: update submodule [${{ steps.set-output.outputs.services }}]"
+            
+            if [[ "${{ steps.set-output.outputs.critical_files }}" == "true" ]]; then
+              COMMIT_MSG="$COMMIT_MSG 🔴 CRITICAL"
+            fi
+            
             git add .
-            git commit -m "Update submodule to $TARGET"
+            git commit -m "$COMMIT_MSG"
             git push origin main
           else
             echo "✅ Submodule is already up to date. No changes."
           fi
+
+  trigger-build:
+    runs-on: ubuntu-latest
+    needs: sync
+    steps:
+      - name: Trigger Service CI/CD
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.DEVOPS_PAT }}
+          repository: kenjima3301/NT548-DevOps
+          event-type: service-build
+          client-payload: |
+            {
+              "changed_services": "${{ needs.sync.outputs.changed_services }}",
+              "change_type": "${{ needs.sync.outputs.change_type }}",
+              "critical_files": "${{ needs.sync.outputs.critical_files }}"
+            }
