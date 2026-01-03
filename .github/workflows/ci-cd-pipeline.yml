@@ -7,6 +7,7 @@ on:
       - test
     types: [opened, synchronize, reopened]
     paths:
+      - 'web/dorashop'
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
       - 'ci-cd/sonarqube/**'
@@ -16,6 +17,7 @@ on:
       - main
       - test
     paths:
+      - 'web/dorashop'
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
   workflow_dispatch:
@@ -45,6 +47,7 @@ jobs:
         with:
           filters: |
             web:
+              - 'web/dorashop'
               - 'web/dorashop/**'
             k8s:
               - 'ci-cd/k8s/**'

@@ -25,6 +25,7 @@ jobs:
 
       # 2. Update Submodule
       - name: Update Submodule Code
+        id: update
         run: |
           cd web/dorashop
           git fetch origin
@@ -45,17 +46,21 @@ jobs:
 
           echo "Checking out to: $TARGET"
           git checkout $TARGET
+          
+          # Get actual commit hash after checkout
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "target_sha=$ACTUAL_SHA" >> $GITHUB_OUTPUT
           cd ../..
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'actions@github.com'
+          git config --global user.name 'CI/CD Bot'
+          git config --global user.email 'ci-cd-bot@users.noreply.github.com'
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "Update submodule to $TARGET"
+            git commit -m "chore: update submodule to ${{ steps.update.outputs.target_sha }}"
             git push origin main
           else
             echo "✅ Submodule is already up to date. No changes."
