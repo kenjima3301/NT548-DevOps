@@ -54,6 +54,9 @@ spec:
         - name: DB_PASSWORD
           value: "postgres"
         - name: DB_HOST
-          value: "db"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DB_HOST
         - name: DB_PORT
           value: "5432"

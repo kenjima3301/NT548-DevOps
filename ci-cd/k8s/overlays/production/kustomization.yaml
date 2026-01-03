@@ -24,6 +24,7 @@ configMapGenerator:
     literals:
       - ENVIRONMENT=production
       - DEBUG=false
+      - DB_HOST=prod-db
 
 # Production-specific resource limits
 patches:

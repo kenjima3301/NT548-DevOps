@@ -23,4 +23,5 @@ configMapGenerator:
 - literals:
   - ENVIRONMENT=development
   - DEBUG=true
+  - DB_HOST=dev-db
   name: app-config
