@@ -12,9 +12,9 @@ on:
   push:
     branches: [main, test]
     paths:
-      - 'web/dorashop/**'
+      - 'web/dorashop'        # Submodule pointer change
+      - 'web/dorashop/**'     # Files inside submodule
       - 'ci-cd/k8s/**'
-      - '.gitmodules'
   workflow_dispatch:
 
 env:
