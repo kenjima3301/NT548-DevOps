@@ -71,9 +71,27 @@ jobs:
       # 4. Trigger CI/CD Pipeline manually
       - name: Trigger CI/CD Pipeline
         if: steps.commit-push.outputs.has_changes == 'true'
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.DEVOPS_PAT }}
-          repository: kenjima3301/NT548-DevOps
-          event-type: trigger-ci-cd
-          client-payload: '{"sha": "${{ steps.update-submodule.outputs.target }}", "triggered_by": "submodule-update"}'
+        run: |
+          echo "🚀 Triggering CI/CD Pipeline via repository_dispatch..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.DEVOPS_PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/kenjima3301/NT548-DevOps/dispatches \
+            -d '{"event_type":"trigger-ci-cd","client_payload":{"sha":"${{ steps.update-submodule.outputs.target }}","triggered_by":"submodule-update"}}')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "✅ Successfully triggered CI/CD Pipeline!"
+          else
+            echo "❌ Failed to trigger CI/CD Pipeline"
+            echo "Full response: $RESPONSE"
+            exit 1
+          fi
