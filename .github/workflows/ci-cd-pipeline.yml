@@ -1,6 +1,8 @@
 name: Dorashop CI/CD Pipeline
 
 on:
+  repository_dispatch:
+    types: [trigger-ci-cd]
   pull_request:
     branches: [main, test]
     types: [opened, synchronize, reopened]
