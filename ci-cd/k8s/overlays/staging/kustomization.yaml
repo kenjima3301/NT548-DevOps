@@ -24,4 +24,3 @@ configMapGenerator:
     literals:
       - ENVIRONMENT=staging
       - DEBUG=false
-      - DB_HOST=staging-db

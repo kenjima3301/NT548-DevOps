@@ -25,7 +25,6 @@ jobs:
 
       # 2. Update Submodule
       - name: Update Submodule Code
-        id: update-submodule
         run: |
           cd web/dorashop
           git fetch origin
@@ -47,51 +46,17 @@ jobs:
           echo "Checking out to: $TARGET"
           git checkout $TARGET
           cd ../..
-          
-          # Export TARGET to GITHUB_OUTPUT for next steps
-          echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
-        id: commit-push
         run: |
-          git config --global user.name 'actions-user'
-          git config --global user.email 'actions-user@noreply.github.com'
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "chore: update submodule dorashop to ${{ steps.update-submodule.outputs.target }}"
+            git commit -m "Update submodule to $TARGET"
             git push origin main
-            echo "has_changes=true" >> $GITHUB_OUTPUT
           else
             echo "✅ Submodule is already up to date. No changes."
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          fi
-      
-      # 4. Trigger CI/CD Pipeline manually
-      - name: Trigger CI/CD Pipeline
-        if: steps.commit-push.outputs.has_changes == 'true'
-        run: |
-          echo "🚀 Triggering CI/CD Pipeline via repository_dispatch..."
-          
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.DEVOPS_PAT }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/kenjima3301/NT548-DevOps/dispatches \
-            -d '{"event_type":"trigger-ci-cd","client_payload":{"sha":"${{ steps.update-submodule.outputs.target }}","triggered_by":"submodule-update"}}')
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          
-          echo "HTTP Code: $HTTP_CODE"
-          echo "Response: $BODY"
-          
-          if [ "$HTTP_CODE" = "204" ]; then
-            echo "✅ Successfully triggered CI/CD Pipeline!"
-          else
-            echo "❌ Failed to trigger CI/CD Pipeline"
-            echo "Full response: $RESPONSE"
-            exit 1
           fi
