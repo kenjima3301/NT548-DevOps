@@ -25,6 +25,7 @@ jobs:
 
       # 2. Update Submodule
       - name: Update Submodule Code
+        id: update-submodule
         run: |
           cd web/dorashop
           git fetch origin
@@ -46,6 +47,9 @@ jobs:
           echo "Checking out to: $TARGET"
           git checkout $TARGET
           cd ../..
+          
+          # Export TARGET to GITHUB_OUTPUT for next steps
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
@@ -56,7 +60,7 @@ jobs:
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "chore: update submodule dorashop to $TARGET"
+            git commit -m "chore: update submodule dorashop to ${{ steps.update-submodule.outputs.target }}"
             git push origin main
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
