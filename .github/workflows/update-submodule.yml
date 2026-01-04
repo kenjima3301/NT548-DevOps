@@ -80,6 +80,16 @@ jobs:
             echo "updated=false" >> $GITHUB_OUTPUT
           fi
 
+      # 4. Trigger CI/CD Pipeline (vì push từ bot không tự động trigger)
+      - name: Trigger CI/CD Pipeline
+        if: steps.push.outputs.updated == 'true'
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.DEVOPS_PAT }}
+          repository: kenjima3301/NT548-DevOps
+          event-type: run-cicd
+          client-payload: '{"sha": "${{ steps.update.outputs.target_sha }}", "paths": "${{ steps.update.outputs.changed_paths }}"}'
+
       # 4. Trigger CI/CD Pipeline with paths info
       - name: Trigger CI/CD Pipeline
         if: steps.push.outputs.updated == 'true' && github.event.client_payload.paths != ''
