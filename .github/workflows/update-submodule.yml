@@ -167,20 +167,7 @@ jobs:
             echo "📤 Pushing to branch: $TARGET_BRANCH"
             git push origin HEAD:$TARGET_BRANCH
             echo "✅ Pushed submodule update to $TARGET_BRANCH"
+            echo "🔄 ci-cd-pipeline.yml will auto-trigger from this push"
           else
             echo "✅ Submodule is already up to date. No changes."
           fi
-
-  # Trigger CI/CD Pipeline based on changes
-  trigger-cicd:
-    name: Trigger CI/CD Pipeline
-    needs: sync
-    if: needs.sync.outputs.submodule_updated == 'true'
-    uses: ./.github/workflows/ci-cd-pipeline.yml
-    with:
-      cart_changed: ${{ needs.sync.outputs.cart_changed }}
-      products_changed: ${{ needs.sync.outputs.products_changed }}
-      core_changed: ${{ needs.sync.outputs.core_changed }}
-      settings_changed: ${{ needs.sync.outputs.settings_changed }}
-      requirements_changed: ${{ needs.sync.outputs.requirements_changed }}
-    secrets: inherit

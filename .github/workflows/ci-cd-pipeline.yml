@@ -22,33 +22,6 @@ on:
       - 'ci-cd/k8s/**'
       - '.github/workflows/**'
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      cart_changed:
-        description: 'Cart service changed'
-        required: false
-        type: string
-        default: 'false'
-      products_changed:
-        description: 'Products service changed'
-        required: false
-        type: string
-        default: 'false'
-      core_changed:
-        description: 'Core/Settings changed'
-        required: false
-        type: string
-        default: 'false'
-      settings_changed:
-        description: 'Settings changed'
-        required: false
-        type: string
-        default: 'false'
-      requirements_changed:
-        description: 'Requirements changed'
-        required: false
-        type: string
-        default: 'false'
 
 env:
   AWS_REGION: ap-southeast-1
@@ -89,41 +62,48 @@ jobs:
             workflows:
               - '.github/workflows/**'
 
-      # Pass through submodule change info from workflow_call inputs
-      - name: Process Submodule Changes
+      # Parse commit message to detect submodule service changes
+      - name: Detect Submodule Service Changes
         id: submodule-changes
         run: |
-          # If triggered by workflow_call (from update-submodule), use those inputs
-          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
-            echo "🔍 Using submodule change detection from workflow_call"
-            echo "cart_changed=${{ inputs.cart_changed }}" >> $GITHUB_OUTPUT
-            echo "products_changed=${{ inputs.products_changed }}" >> $GITHUB_OUTPUT
-            echo "core_changed=${{ inputs.core_changed }}" >> $GITHUB_OUTPUT
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "📝 Commit message: $COMMIT_MSG"
+          
+          # Check if commit is from submodule update
+          if [[ "$COMMIT_MSG" == *"update submodule"* ]]; then
+            echo "🔍 Submodule update detected, parsing service tags..."
             
-            # Check if any service changed
-            if [[ "${{ inputs.cart_changed }}" == "true" ]] || \
-               [[ "${{ inputs.products_changed }}" == "true" ]] || \
-               [[ "${{ inputs.core_changed }}" == "true" ]] || \
-               [[ "${{ inputs.settings_changed }}" == "true" ]] || \
-               [[ "${{ inputs.requirements_changed }}" == "true" ]]; then
+            # Parse tags from commit message
+            CART_CHANGED="false"
+            PRODUCTS_CHANGED="false"
+            CORE_CHANGED="false"
+            
+            [[ "$COMMIT_MSG" == *"[cart]"* ]] && CART_CHANGED="true"
+            [[ "$COMMIT_MSG" == *"[products]"* ]] && PRODUCTS_CHANGED="true"
+            [[ "$COMMIT_MSG" == *"[core]"* ]] && CORE_CHANGED="true"
+            
+            echo "cart_changed=$CART_CHANGED" >> $GITHUB_OUTPUT
+            echo "products_changed=$PRODUCTS_CHANGED" >> $GITHUB_OUTPUT
+            echo "core_changed=$CORE_CHANGED" >> $GITHUB_OUTPUT
+            
+            if [[ "$CART_CHANGED" == "true" ]] || [[ "$PRODUCTS_CHANGED" == "true" ]] || [[ "$CORE_CHANGED" == "true" ]]; then
               echo "any_service_changed=true" >> $GITHUB_OUTPUT
             else
               echo "any_service_changed=false" >> $GITHUB_OUTPUT
             fi
+            
+            echo "## 🎯 Submodule Service Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Cart Service:** \`$CART_CHANGED\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Products Service:** \`$PRODUCTS_CHANGED\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Core/Settings:** \`$CORE_CHANGED\`" >> $GITHUB_STEP_SUMMARY
           else
-            # For regular push/PR, assume all services changed
-            echo "📝 Regular push/PR - assuming all services may have changed"
+            echo "📦 Regular commit - assuming all services may be affected"
             echo "cart_changed=true" >> $GITHUB_OUTPUT
             echo "products_changed=true" >> $GITHUB_OUTPUT
             echo "core_changed=true" >> $GITHUB_OUTPUT
             echo "any_service_changed=true" >> $GITHUB_OUTPUT
           fi
-          
-          echo "## 🎯 Service Change Detection" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cart Service:** \`${{ inputs.cart_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Products Service:** \`${{ inputs.products_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Core/Settings:** \`${{ inputs.core_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
 
   test-and-scan:
     name: Test & Security Scan
@@ -189,32 +169,39 @@ jobs:
           cd ${{ github.workspace }}
           
           # Determine which tests to run based on changed services
-          TEST_PATHS="ci-cd/sonarqube/tests/"
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
           
-          if [[ "${{ needs.path-filter.outputs.cart_changed }}" == "true" ]]; then
-            echo "🛒 Running Cart service tests"
-            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_cart.py"
-          fi
-          
-          if [[ "${{ needs.path-filter.outputs.products_changed }}" == "true" ]]; then
-            echo "📦 Running Products service tests"
-            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_products.py"
-          fi
-          
-          if [[ "${{ needs.path-filter.outputs.core_changed }}" == "true" ]]; then
-            echo "⚙️ Running Core tests"
-            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_core.py"
-          fi
-          
-          # If workflow_call and specific services, run only those tests
-          # Otherwise run all tests
-          if [[ "${{ github.event_name }}" == "workflow_call" ]] && \
-             [[ "${{ needs.path-filter.outputs.any_service_changed }}" == "true" ]]; then
-            echo "🎯 Running selective tests for changed services"
+          if [[ "$COMMIT_MSG" == *"update submodule"* ]] && [[ "${{ needs.path-filter.outputs.any_service_changed }}" == "true" ]]; then
+            echo "🎯 Running selective tests based on submodule changes"
+            
+            TEST_PATHS=""
+            
+            if [[ "${{ needs.path-filter.outputs.cart_changed }}" == "true" ]]; then
+              echo "🛒 Including Cart service tests"
+              TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_views.py::TestCartView"
+            fi
+            
+            if [[ "${{ needs.path-filter.outputs.products_changed }}" == "true" ]]; then
+              echo "📦 Including Products service tests"
+              TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_views.py::TestProductListView ci-cd/sonarqube/tests/test_views.py::TestProductDetailView"
+            fi
+            
+            if [[ "${{ needs.path-filter.outputs.core_changed }}" == "true" ]]; then
+              echo "⚙️ Including Core tests"
+              TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_models.py ci-cd/sonarqube/tests/test_urls.py"
+            fi
+            
+            # If no specific service, run all tests
+            if [[ -z "$TEST_PATHS" ]]; then
+              echo "📋 No specific services detected, running all tests"
+              TEST_PATHS="ci-cd/sonarqube/tests/"
+            fi
           else
-            echo "🔍 Running all tests"
+            echo "🔍 Running all tests (regular commit or full coverage needed)"
             TEST_PATHS="ci-cd/sonarqube/tests/"
           fi
+          
+          echo "Test paths: $TEST_PATHS"
           
           # Run pytest
           pytest $TEST_PATHS \
