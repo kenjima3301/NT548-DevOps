@@ -1,8 +1,6 @@
 name: Smart CI/CD Pipeline
 
 on:
-  repository_dispatch:
-    types: [run-cicd]
   pull_request:
     branches: 
       - main
@@ -55,28 +53,22 @@ jobs:
             echo "environment=dev" >> $GITHUB_OUTPUT
           fi
           
-          # Try to parse paths from commit message first
+          # Parse paths from commit message (từ update-submodule)
           COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "📝 Commit message: $COMMIT_MSG"
+          
           if [[ "$COMMIT_MSG" =~ \[paths:([^\]]+)\] ]]; then
             PATHS="${BASH_REMATCH[1]}"
             echo "source=submodule" >> $GITHUB_OUTPUT
             echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
-            echo "📦 Source: Submodule update (parsed from commit)"
-            echo "📝 Changed paths: $PATHS"
+            echo "📦 Source: Submodule update"
+            echo "📝 Parsed paths: $PATHS"
             
-          # Case 1: Triggered from repository_dispatch
-          elif [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            echo "source=submodule" >> $GITHUB_OUTPUT
-            PATHS="${{ github.event.client_payload.paths }}"
-            echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
-            echo "📦 Source: Submodule update (dispatch)"
-            echo "📝 Changed paths: $PATHS"
-            
-          # Case 2: Direct push/PR to DevOps repo
+          # Direct push/PR to DevOps repo (không có [paths:...])
           else
             echo "source=direct" >> $GITHUB_OUTPUT
             echo "📦 Source: Direct push/PR"
-            # Will use paths-filter below
+            # Will use changed-files detection below
           fi
           
       - name: Detect Direct Changes (if not from submodule)
