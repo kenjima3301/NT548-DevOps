@@ -55,12 +55,12 @@ jobs:
             
             if [[ "${{ github.event.client_payload.cart_changed }}" == "true" ]]; then
               echo "- 🛒 **Cart Service**" >> $GITHUB_STEP_SUMMARY
-              echo "  - Files: \`${{ github.event.client_payload.cart_changed_files }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "  - Files: \`${{ github.event.client_payload.cart_files }}\`" >> $GITHUB_STEP_SUMMARY
             fi
             
             if [[ "${{ github.event.client_payload.products_changed }}" == "true" ]]; then
               echo "- 📦 **Products Service**" >> $GITHUB_STEP_SUMMARY
-              echo "  - Files: \`${{ github.event.client_payload.products_changed_files }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "  - Files: \`${{ github.event.client_payload.products_files }}\`" >> $GITHUB_STEP_SUMMARY
             fi
             
             if [[ "${{ github.event.client_payload.core_changed }}" == "true" ]]; then
