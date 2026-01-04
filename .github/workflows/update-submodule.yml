@@ -14,83 +14,16 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    outputs:
-      submodule_updated: ${{ steps.check-changes.outputs.submodule_updated }}
-      cart_changed: ${{ steps.extract-payload.outputs.cart_changed }}
-      products_changed: ${{ steps.extract-payload.outputs.products_changed }}
-      core_changed: ${{ steps.extract-payload.outputs.core_changed }}
-      settings_changed: ${{ steps.extract-payload.outputs.settings_changed }}
-      requirements_changed: ${{ steps.extract-payload.outputs.requirements_changed }}
-      all_changed_files: ${{ steps.extract-payload.outputs.all_changed_files }}
-    
     steps:
       # 1. Checkout Code
       - name: Checkout DevOps Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.DEVOPS_PAT }} 
           submodules: true
           fetch-depth: 0
 
-      # 2. Extract Payload from Repository Dispatch
-      - name: Extract Changed Files from Payload
-        id: extract-payload
-        run: |
-          if [ -n "${{ github.event.client_payload.sha }}" ]; then
-            echo "🔍 Extracting change info from repository_dispatch payload"
-            
-            # Extract change flags
-            echo "cart_changed=${{ github.event.client_payload.cart_changed }}" >> $GITHUB_OUTPUT
-            echo "products_changed=${{ github.event.client_payload.products_changed }}" >> $GITHUB_OUTPUT
-            echo "core_changed=${{ github.event.client_payload.core_changed }}" >> $GITHUB_OUTPUT
-            echo "settings_changed=${{ github.event.client_payload.settings_changed }}" >> $GITHUB_OUTPUT
-            echo "requirements_changed=${{ github.event.client_payload.requirements_changed }}" >> $GITHUB_OUTPUT
-            echo "all_changed_files=${{ github.event.client_payload.all_changed_files }}" >> $GITHUB_OUTPUT
-            
-            echo "## 📦 Received Submodule Update Request" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Target SHA:** \`${{ github.event.client_payload.sha }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Services Changed:" >> $GITHUB_STEP_SUMMARY
-            
-            if [[ "${{ github.event.client_payload.cart_changed }}" == "true" ]]; then
-              echo "- 🛒 **Cart Service**" >> $GITHUB_STEP_SUMMARY
-              echo "  - Files: \`${{ github.event.client_payload.cart_files }}\`" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if [[ "${{ github.event.client_payload.products_changed }}" == "true" ]]; then
-              echo "- 📦 **Products Service**" >> $GITHUB_STEP_SUMMARY
-              echo "  - Files: \`${{ github.event.client_payload.products_files }}\`" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if [[ "${{ github.event.client_payload.core_changed }}" == "true" ]]; then
-              echo "- ⚙️ **Core/Settings**" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if [[ "${{ github.event.client_payload.requirements_changed }}" == "true" ]]; then
-              echo "- 📋 **Dependencies**" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "⚡ Manual trigger - assuming all services changed"
-            echo "cart_changed=true" >> $GITHUB_OUTPUT
-            echo "products_changed=true" >> $GITHUB_OUTPUT
-            echo "core_changed=true" >> $GITHUB_OUTPUT
-            echo "settings_changed=true" >> $GITHUB_OUTPUT
-            echo "requirements_changed=true" >> $GITHUB_OUTPUT
-            echo "all_changed_files=manual-trigger" >> $GITHUB_OUTPUT
-          fi
-
-      # 3. Get Submodule Current SHA (Before Update)
-      - name: Get Current Submodule SHA
-        id: current-sha
-        run: |
-          cd web/dorashop
-          CURRENT_SHA=$(git rev-parse HEAD)
-          echo "current_sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
-          echo "📌 Current submodule SHA: $CURRENT_SHA"
-          cd ../..
-
-      # 4. Update Submodule
+      # 2. Update Submodule
       - name: Update Submodule Code
         id: update
         run: |
@@ -119,55 +52,16 @@ jobs:
           echo "target_sha=$ACTUAL_SHA" >> $GITHUB_OUTPUT
           cd ../..
 
-      # 5. Check if Submodule Actually Changed
-      - name: Check Submodule Changes
-        id: check-changes
-        run: |
-          if [[ "${{ steps.current-sha.outputs.current_sha }}" != "${{ steps.update.outputs.target_sha }}" ]]; then
-            echo "submodule_updated=true" >> $GITHUB_OUTPUT
-            echo "✅ Submodule đã thay đổi từ ${{ steps.current-sha.outputs.current_sha }} → ${{ steps.update.outputs.target_sha }}"
-          else
-            echo "submodule_updated=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ Submodule không thay đổi"
-          fi
-
-      # 6. Commit & Push (Chỉ push nếu có thay đổi)
+      # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
-        if: steps.check-changes.outputs.submodule_updated == 'true'
         run: |
           git config --global user.name 'CI/CD Bot'
           git config --global user.email 'ci-cd-bot@users.noreply.github.com'
           
           if [[ -n $(git status -s) ]]; then
             git add .
-            
-            # Build commit message with changed services info
-            COMMIT_MSG="chore: update submodule to ${{ steps.update.outputs.target_sha }}"
-            
-            if [[ "${{ steps.extract-payload.outputs.cart_changed }}" == "true" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [cart]"
-            fi
-            
-            if [[ "${{ steps.extract-payload.outputs.products_changed }}" == "true" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [products]"
-            fi
-            
-            if [[ "${{ steps.extract-payload.outputs.core_changed }}" == "true" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [core]"
-            fi
-            
-            git commit -m "$COMMIT_MSG"
-            
-            # Determine target branch (default to main if triggered by repository_dispatch)
-            TARGET_BRANCH="${{ github.ref_name }}"
-            if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-              TARGET_BRANCH="test"  # Change to 'main' if you want to push to main
-            fi
-            
-            echo "📤 Pushing to branch: $TARGET_BRANCH"
-            git push origin HEAD:$TARGET_BRANCH
-            echo "✅ Pushed submodule update to $TARGET_BRANCH"
-            echo "🔄 ci-cd-pipeline.yml will auto-trigger from this push"
+            git commit -m "chore: update submodule to ${{ steps.update.outputs.target_sha }}"
+            git push origin main
           else
             echo "✅ Submodule is already up to date. No changes."
           fi
