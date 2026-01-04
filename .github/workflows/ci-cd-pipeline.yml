@@ -16,18 +16,53 @@ on:
     branches: 
       - main
       - test
-    # Không dùng paths filter để cho phép submodule updates trigger
-    # paths sẽ được detect bởi job detect-changes
+    paths:
+      - 'web/dorashop'
+      - 'web/dorashop/**'
+      - 'ci-cd/k8s/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # Unified detection for both submodule trigger and direct changes
-  detect-changes:
-    name: Detect Changes & Build Strategy
+  # Step 1: Check if relevant paths changed (to trigger pipeline)
+  path-filter:
+    name: Detect Changed Paths
     runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      k8s: ${{ steps.filter.outputs.k8s }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check path filters
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'web/dorashop'
+              - 'web/dorashop/**'
+            k8s:
+              - 'ci-cd/k8s/**'
+            workflows:
+              - '.github/workflows/**'
+
+  # Step 2: Parse commit message and decide strategy (only if paths changed)
+  detect-changes:
+    name: Analyze Changes & Build Strategy
+    runs-on: ubuntu-latest
+    needs: path-filter
+    if: |
+      needs.path-filter.outputs.web == 'true' ||
+      needs.path-filter.outputs.k8s == 'true' ||
+      needs.path-filter.outputs.workflows == 'true'
     outputs:
       source: ${{ steps.detect.outputs.source }}
       web_paths: ${{ steps.strategy.outputs.web_paths }}
@@ -44,7 +79,7 @@ jobs:
           fetch-depth: 2
           submodules: recursive
 
-      - name: Detect Change Source & Paths
+      - name: Detect Change Source & Environment
         id: detect
         run: |
           # Determine environment
@@ -65,15 +100,15 @@ jobs:
             echo "📦 Source: Submodule update"
             echo "📝 Parsed paths: $PATHS"
             
-          # Direct push/PR to DevOps repo (không có [paths:...])
+          # Direct push/PR to DevOps repo (không có [...])
           else
             echo "source=direct" >> $GITHUB_OUTPUT
             echo "📦 Source: Direct push/PR"
             # Will use changed-files detection below
           fi
           
-      - name: Detect Direct Changes (if not from submodule)
-        if: steps.detect.outputs.source == 'direct'
+      - name: Detect Direct Changes (if not from submodule and web changed)
+        if: steps.detect.outputs.source == 'direct' && needs.path-filter.outputs.web == 'true'
         uses: tj-actions/changed-files@v45
         id: changed
         with:
@@ -93,22 +128,20 @@ jobs:
               - web/dorashop/templates/**
               - web/dorashop/static/**
               - web/dorashop/media/**
-            k8s:
-              - ci-cd/k8s/**
-            workflows:
-              - .github/workflows/**
       
       - name: Build Strategy Decision
         id: strategy
         run: |
           SOURCE="${{ steps.detect.outputs.source }}"
-          K8S_CHANGED="false"
-          WF_CHANGED="false"
+          WEB_CHANGED="${{ needs.path-filter.outputs.web }}"
+          K8S_CHANGED="${{ needs.path-filter.outputs.k8s }}"
+          WF_CHANGED="${{ needs.path-filter.outputs.workflows }}"
           
+          # Get web paths
           if [[ "$SOURCE" == "submodule" ]]; then
             PATHS="${{ steps.detect.outputs.web_paths }}"
             echo "📝 Submodule paths: $PATHS"
-          else
+          elif [[ "$WEB_CHANGED" == "true" ]]; then
             # Build paths string from direct changes
             PATHS=""
             [[ "${{ steps.changed.outputs.web_cart_any_changed }}" == "true" ]] && PATHS="${PATHS}cart "
@@ -116,16 +149,13 @@ jobs:
             [[ "${{ steps.changed.outputs.web_core_any_changed }}" == "true" ]] && PATHS="${PATHS}core "
             [[ "${{ steps.changed.outputs.web_other_any_changed }}" == "true" ]] && PATHS="${PATHS}other "
             PATHS=$(echo "$PATHS" | xargs)
-            
-            K8S_CHANGED="${{ steps.changed.outputs.k8s_any_changed }}"
-            WF_CHANGED="${{ steps.changed.outputs.workflows_any_changed }}"
-            
             echo "📝 Direct changed paths: $PATHS"
-            echo "📝 K8s changed: $K8S_CHANGED"
-            echo "📝 Workflows changed: $WF_CHANGED"
+          else
+            PATHS=""
           fi
           
           echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
+          echo "📊 Summary - Web: $WEB_CHANGED | K8s: $K8S_CHANGED | Workflows: $WF_CHANGED | Paths: $PATHS"
           
           # Decision logic
           if [[ "$PATHS" =~ (cart|products|core) ]]; then
@@ -184,7 +214,7 @@ jobs:
   # Build and deploy
   build-deploy:
     name: Build & Deploy
-    needs: [detect-changes, full-test-scan, light-scan]
+    needs: [path-filter, detect-changes, full-test-scan, light-scan]
     if: |
       always() &&
       needs.detect-changes.outputs.needs_build == 'true' &&
