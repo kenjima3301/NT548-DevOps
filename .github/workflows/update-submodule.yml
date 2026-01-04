@@ -19,7 +19,7 @@ jobs:
       - name: Checkout DevOps Repo
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DEVOPS_PAT }} 
           submodules: true
           fetch-depth: 0
 
@@ -59,49 +59,20 @@ jobs:
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
-        id: push
         run: |
           git config --global user.name 'CI/CD Bot'
           git config --global user.email 'ci-cd-bot@users.noreply.github.com'
           
-          PATHS="${{ steps.update.outputs.changed_paths }}"
-          
           if [[ -n $(git status -s) ]]; then
             COMMIT_MSG="chore: update submodule to ${{ steps.update.outputs.target_sha }}"
             
-            if [[ -n "$PATHS" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [paths:$PATHS]"
+            if [[ -n "${{ steps.update.outputs.changed_paths }}" ]]; then
+              COMMIT_MSG="$COMMIT_MSG [paths:${{ steps.update.outputs.changed_paths }}]"
             fi
             
             git add .
             git commit -m "$COMMIT_MSG"
-            
-            # Push using PAT to bypass branch protection
-            git remote set-url origin https://x-access-token:${{ secrets.DEVOPS_PAT }}@github.com/kenjima3301/NT548-DevOps.git
             git push origin main
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "paths=$PATHS" >> $GITHUB_OUTPUT
           else
             echo "✅ Submodule is already up to date. No changes."
-            echo "updated=false" >> $GITHUB_OUTPUT
           fi
-
-      # 4. Trigger CI/CD Pipeline (bắt buộc vì push từ bot không auto-trigger)
-      - name: Trigger CI/CD Pipeline
-        if: steps.push.outputs.updated == 'true'
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.DEVOPS_PAT }}
-          repository: kenjima3301/NT548-DevOps
-          event-type: run-cicd
-          client-payload: '{"sha": "${{ steps.update.outputs.target_sha }}", "paths": "${{ steps.push.outputs.paths }}"}'
-
-      # 4. Trigger CI/CD Pipeline with paths info
-      - name: Trigger CI/CD Pipeline
-        if: steps.push.outputs.updated == 'true' && github.event.client_payload.paths != ''
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.DEVOPS_PAT }}
-          repository: kenjima3301/NT548-DevOps
-          event-type: run-cicd
-          client-payload: '{"sha": "${{ steps.update.outputs.target_sha }}", "paths": "${{ steps.update.outputs.changed_paths }}"}'
