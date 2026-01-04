@@ -59,7 +59,6 @@ jobs:
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
       - name: Commit and Push
-        id: push
         run: |
           git config --global user.name 'CI/CD Bot'
           git config --global user.email 'ci-cd-bot@users.noreply.github.com'
@@ -68,27 +67,15 @@ jobs:
             COMMIT_MSG="chore: update submodule to ${{ steps.update.outputs.target_sha }}"
             
             if [[ -n "${{ steps.update.outputs.changed_paths }}" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [${{ steps.update.outputs.changed_paths }}]"
+              COMMIT_MSG="$COMMIT_MSG [paths:${{ steps.update.outputs.changed_paths }}]"
             fi
             
             git add .
             git commit -m "$COMMIT_MSG"
             git push origin main
-            echo "updated=true" >> $GITHUB_OUTPUT
           else
             echo "✅ Submodule is already up to date. No changes."
-            echo "updated=false" >> $GITHUB_OUTPUT
           fi
-
-      # 4. Trigger CI/CD Pipeline (vì push từ bot không tự động trigger)
-      - name: Trigger CI/CD Pipeline
-        if: steps.push.outputs.updated == 'true'
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.DEVOPS_PAT }}
-          repository: kenjima3301/NT548-DevOps
-          event-type: run-cicd
-          client-payload: '{"sha": "${{ steps.update.outputs.target_sha }}", "paths": "${{ steps.update.outputs.changed_paths }}"}'
 
       # 4. Trigger CI/CD Pipeline with paths info
       - name: Trigger CI/CD Pipeline

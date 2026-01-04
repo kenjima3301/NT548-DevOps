@@ -55,12 +55,21 @@ jobs:
             echo "environment=dev" >> $GITHUB_OUTPUT
           fi
           
-          # Case 1: Triggered from web submodule
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+          # Try to parse paths from commit message first
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if [[ "$COMMIT_MSG" =~ \[paths:([^\]]+)\] ]]; then
+            PATHS="${BASH_REMATCH[1]}"
+            echo "source=submodule" >> $GITHUB_OUTPUT
+            echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
+            echo "📦 Source: Submodule update (parsed from commit)"
+            echo "📝 Changed paths: $PATHS"
+            
+          # Case 1: Triggered from repository_dispatch
+          elif [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             echo "source=submodule" >> $GITHUB_OUTPUT
             PATHS="${{ github.event.client_payload.paths }}"
             echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
-            echo "📦 Source: Submodule update"
+            echo "📦 Source: Submodule update (dispatch)"
             echo "📝 Changed paths: $PATHS"
             
           # Case 2: Direct push/PR to DevOps repo
