@@ -7,7 +7,7 @@ on:
       - test
     types: [opened, synchronize, reopened]
     paths:
-      - 'web/dorashop/**'
+      - 'web/dorashop'
       - 'ci-cd/k8s/**'
       - '.github/workflows/**'
   push:
