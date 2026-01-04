@@ -2,7 +2,7 @@ name: Smart CI/CD Pipeline
 
 on:
   repository_dispatch:
-    types: [update-submodule]
+    types: [run-cicd]
   pull_request:
     branches: 
       - main
