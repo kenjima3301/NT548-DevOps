@@ -9,17 +9,15 @@ on:
     paths:
       - 'web/dorashop'
       - 'web/dorashop/**'
+      - '.gitmodules'
       - 'ci-cd/k8s/**'
       - '.github/workflows/**'
   push:
     branches: 
       - main
       - test
-    paths:
-      - 'web/dorashop'
-      - 'web/dorashop/**'
-      - 'ci-cd/k8s/**'
-      - '.github/workflows/**'
+    # Không dùng paths filter để cho phép submodule updates trigger
+    # paths sẽ được detect bởi job detect-changes
   workflow_dispatch:
 
 env:
@@ -44,6 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          submodules: recursive
 
       - name: Detect Change Source & Paths
         id: detect
@@ -59,7 +58,7 @@ jobs:
           COMMIT_MSG="${{ github.event.head_commit.message }}"
           echo "📝 Commit message: $COMMIT_MSG"
           
-          if [[ "$COMMIT_MSG" =~ \[paths:([^\]]+)\] ]]; then
+          if [[ "$COMMIT_MSG" =~ \[([^\]]+)\] ]]; then
             PATHS="${BASH_REMATCH[1]}"
             echo "source=submodule" >> $GITHUB_OUTPUT
             echo "web_paths=$PATHS" >> $GITHUB_OUTPUT

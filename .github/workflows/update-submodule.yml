@@ -67,7 +67,7 @@ jobs:
             COMMIT_MSG="chore: update submodule to ${{ steps.update.outputs.target_sha }}"
             
             if [[ -n "${{ steps.update.outputs.changed_paths }}" ]]; then
-              COMMIT_MSG="$COMMIT_MSG [paths:${{ steps.update.outputs.changed_paths }}]"
+              COMMIT_MSG="$COMMIT_MSG [${{ steps.update.outputs.changed_paths }}]"
             fi
             
             git add .
