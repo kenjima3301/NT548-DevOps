@@ -22,6 +22,33 @@ on:
       - 'ci-cd/k8s/**'
       - '.github/workflows/**'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      cart_changed:
+        description: 'Cart service changed'
+        required: false
+        type: string
+        default: 'false'
+      products_changed:
+        description: 'Products service changed'
+        required: false
+        type: string
+        default: 'false'
+      core_changed:
+        description: 'Core/Settings changed'
+        required: false
+        type: string
+        default: 'false'
+      settings_changed:
+        description: 'Settings changed'
+        required: false
+        type: string
+        default: 'false'
+      requirements_changed:
+        description: 'Requirements changed'
+        required: false
+        type: string
+        default: 'false'
 
 env:
   AWS_REGION: ap-southeast-1
@@ -38,9 +65,16 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       k8s: ${{ steps.filter.outputs.k8s }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      cart_changed: ${{ steps.submodule-changes.outputs.cart_changed }}
+      products_changed: ${{ steps.submodule-changes.outputs.products_changed }}
+      core_changed: ${{ steps.submodule-changes.outputs.core_changed }}
+      any_service_changed: ${{ steps.submodule-changes.outputs.any_service_changed }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Check path filters
         uses: dorny/paths-filter@v3
@@ -54,6 +88,42 @@ jobs:
               - 'ci-cd/k8s/**'
             workflows:
               - '.github/workflows/**'
+
+      # Pass through submodule change info from workflow_call inputs
+      - name: Process Submodule Changes
+        id: submodule-changes
+        run: |
+          # If triggered by workflow_call (from update-submodule), use those inputs
+          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "🔍 Using submodule change detection from workflow_call"
+            echo "cart_changed=${{ inputs.cart_changed }}" >> $GITHUB_OUTPUT
+            echo "products_changed=${{ inputs.products_changed }}" >> $GITHUB_OUTPUT
+            echo "core_changed=${{ inputs.core_changed }}" >> $GITHUB_OUTPUT
+            
+            # Check if any service changed
+            if [[ "${{ inputs.cart_changed }}" == "true" ]] || \
+               [[ "${{ inputs.products_changed }}" == "true" ]] || \
+               [[ "${{ inputs.core_changed }}" == "true" ]] || \
+               [[ "${{ inputs.settings_changed }}" == "true" ]] || \
+               [[ "${{ inputs.requirements_changed }}" == "true" ]]; then
+              echo "any_service_changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "any_service_changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # For regular push/PR, assume all services changed
+            echo "📝 Regular push/PR - assuming all services may have changed"
+            echo "cart_changed=true" >> $GITHUB_OUTPUT
+            echo "products_changed=true" >> $GITHUB_OUTPUT
+            echo "core_changed=true" >> $GITHUB_OUTPUT
+            echo "any_service_changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "## 🎯 Service Change Detection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cart Service:** \`${{ inputs.cart_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Products Service:** \`${{ inputs.products_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Core/Settings:** \`${{ inputs.core_changed || 'true' }}\`" >> $GITHUB_STEP_SUMMARY
 
   test-and-scan:
     name: Test & Security Scan
@@ -117,8 +187,37 @@ jobs:
           python manage.py migrate --noinput
           python manage.py collectstatic --noinput
           cd ${{ github.workspace }}
-          # Chạy pytest từ ci-cd/sonarqube/
-          pytest ci-cd/sonarqube/tests/ \
+          
+          # Determine which tests to run based on changed services
+          TEST_PATHS="ci-cd/sonarqube/tests/"
+          
+          if [[ "${{ needs.path-filter.outputs.cart_changed }}" == "true" ]]; then
+            echo "🛒 Running Cart service tests"
+            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_cart.py"
+          fi
+          
+          if [[ "${{ needs.path-filter.outputs.products_changed }}" == "true" ]]; then
+            echo "📦 Running Products service tests"
+            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_products.py"
+          fi
+          
+          if [[ "${{ needs.path-filter.outputs.core_changed }}" == "true" ]]; then
+            echo "⚙️ Running Core tests"
+            TEST_PATHS="$TEST_PATHS ci-cd/sonarqube/tests/test_core.py"
+          fi
+          
+          # If workflow_call and specific services, run only those tests
+          # Otherwise run all tests
+          if [[ "${{ github.event_name }}" == "workflow_call" ]] && \
+             [[ "${{ needs.path-filter.outputs.any_service_changed }}" == "true" ]]; then
+            echo "🎯 Running selective tests for changed services"
+          else
+            echo "🔍 Running all tests"
+            TEST_PATHS="ci-cd/sonarqube/tests/"
+          fi
+          
+          # Run pytest
+          pytest $TEST_PATHS \
             -c ci-cd/sonarqube/pytest.ini \
             --cov=web/dorashop \
             --cov-report=xml:coverage.xml \
