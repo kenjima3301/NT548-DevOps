@@ -1,250 +1,196 @@
-name: Stable CI/CD Pipeline
+name: Smart CI/CD Pipeline
 
 on:
+  repository_dispatch:
+    types: [update-submodule]
   pull_request:
     branches: 
       - main
       - test
     types: [opened, synchronize, reopened]
     paths:
-      - 'web/dorashop'
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
-      - 'ci-cd/sonarqube/**'
       - '.github/workflows/**'
   push:
     branches: 
       - main
       - test
     paths:
-      - 'web/dorashop'
       - 'web/dorashop/**'
       - 'ci-cd/k8s/**'
       - '.github/workflows/**'
   workflow_dispatch:
 
 env:
-  AWS_REGION: ap-southeast-1
-  ECR_REGISTRY_URL: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com
-  ECR_REPOSITORY: my-web-app
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # Detect which paths changed to skip unnecessary jobs
-  path-filter:
-    name: Detect Changed Paths
+  # Unified detection for both submodule trigger and direct changes
+  detect-changes:
+    name: Detect Changes & Build Strategy
     runs-on: ubuntu-latest
     outputs:
-      web: ${{ steps.filter.outputs.web }}
-      k8s: ${{ steps.filter.outputs.k8s }}
-      workflows: ${{ steps.filter.outputs.workflows }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check path filters
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            web:
-              - 'web/dorashop'
-              - 'web/dorashop/**'
-            k8s:
-              - 'ci-cd/k8s/**'
-            workflows:
-              - '.github/workflows/**'
-
-  test-and-scan:
-    name: Test & Security Scan
-    runs-on: ubuntu-latest
-    needs: path-filter
-    # Only run if web code or k8s manifests changed
-    if: |
-      needs.path-filter.outputs.web == 'true' ||
-      needs.path-filter.outputs.k8s == 'true' ||
-      needs.path-filter.outputs.workflows == 'true'
-    permissions:
-      contents: read
-      security-events: write
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: dorashop
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5  
-
+      source: ${{ steps.detect.outputs.source }}
+      web_paths: ${{ steps.detect.outputs.web_paths }}
+      needs_full_test: ${{ steps.detect.outputs.needs_full_test }}
+      needs_light_scan: ${{ steps.detect.outputs.needs_light_scan }}
+      needs_build: ${{ steps.detect.outputs.needs_build }}
+      skip_build: ${{ steps.detect.outputs.skip_build }}
+      environment: ${{ steps.detect.outputs.environment }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          submodules: recursive
+          fetch-depth: 2
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
+      - name: Detect Change Source & Paths
+        id: detect
         run: |
-          cd web/dorashop
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-django
-
-      - name: Run Django Tests with Coverage
-        env:
-          DJANGO_SETTINGS_MODULE: dorashop.settings
-          PYTHONPATH: ${{ github.workspace }}/web/dorashop
-          DB_ENGINE: django.db.backends.postgresql
-          DB_NAME: dorashop
-          DB_USER: postgres
-          DB_PASSWORD: postgres
-          DB_HOST: localhost
-          DB_PORT: 5432
-        run: |
-          cd web/dorashop
-          python manage.py migrate --noinput
-          python manage.py collectstatic --noinput
-          cd ${{ github.workspace }}
-          # Chạy pytest từ ci-cd/sonarqube/
-          pytest ci-cd/sonarqube/tests/ \
-            -c ci-cd/sonarqube/pytest.ini \
-            --cov=web/dorashop \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
-            --cov-config=ci-cd/sonarqube/.coveragerc
-
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
-        with:
-          args: >
-            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties
-            -Dsonar.projectBaseDir=${{ github.workspace }}
-            -Dsonar.scm.provider=git
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-
-      - name: Run Trivy vulnerability scanner (Filesystem)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: 'web/dorashop'
-          format: 'sarif'
-          output: 'trivy-fs-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          trivyignores: 'ci-cd/trivy/.trivyignore'
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: 'trivy-fs-results.sarif'
-
-  build-deploy:
-    name: Build - Push - Update GitOps
-    runs-on: ubuntu-latest
-    needs: [path-filter, test-and-scan]
-    # Only run on push to main/develop and if web or k8s changed
-    if: |
-      github.event_name == 'push' &&
-      (needs.path-filter.outputs.web == 'true' || needs.path-filter.outputs.k8s == 'true')
-    permissions:
-      contents: write
-      security-events: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-          # token: ${{ secrets.PAT_TOKEN }}
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build Docker Image
-        id: build-image
-        env:
-          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
-          REPO: ${{ env.ECR_REPOSITORY }}
-          TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          docker build -t $REGISTRY/$REPO:$TAG \
-                       -t $REGISTRY/$REPO:latest \
-                       -f web/dorashop/Dockerfile web/dorashop/
-          
-          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
-
-      - name: Run Trivy vulnerability scanner (Docker Image)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
-          format: 'sarif'
-          output: 'trivy-image-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          trivyignores: 'ci-cd/trivy/.trivyignore'
-
-      - name: Upload Trivy Image results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: 'trivy-image-results.sarif'
-
-      - name: Push Docker Image to ECR
-        env:
-          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
-          REPO: ${{ env.ECR_REPOSITORY }}
-          TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          docker push $REGISTRY/$REPO:$TAG
-          docker push $REGISTRY/$REPO:latest
-
-      - name: Update Kubernetes Manifest
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
-        run: |
-          echo "Updating $ENVIRONMENT overlay with image tag: $IMAGE_TAG"
-          
-          git config --global user.email "ci-cd-bot@users.noreply.github.com"
-          git config --global user.name "CI/CD Bot"
-          
-          # Navigate to the appropriate overlay
-          cd ci-cd/k8s/overlays/$ENVIRONMENT
-          
-          # Update image tag using kustomize
-          kustomize edit set image dorashop-web=${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-          
-          # Commit and push changes
-          git add kustomization.yaml
-          
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
+          # Determine environment
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
           else
-            git commit -m "chore(gitops): update $ENVIRONMENT image to $IMAGE_TAG [skip ci]"
-            git pull origin ${{ github.ref_name }} --rebase
-            git push origin HEAD:${{ github.ref_name }}
-            echo "✅ GitOps manifest updated successfully"
+            echo "environment=dev" >> $GITHUB_OUTPUT
           fi
+          
+          # Case 1: Triggered from web submodule
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "source=submodule" >> $GITHUB_OUTPUT
+            PATHS="${{ github.event.client_payload.paths }}"
+            echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
+            echo "📦 Source: Submodule update"
+            echo "📝 Changed paths: $PATHS"
+            
+          # Case 2: Direct push/PR to DevOps repo
+          else
+            echo "source=direct" >> $GITHUB_OUTPUT
+            echo "📦 Source: Direct push/PR"
+            # Will use paths-filter below
+          fi
+          
+      - name: Detect Direct Changes (if not from submodule)
+        if: steps.detect.outputs.source == 'direct'
+        uses: tj-actions/changed-files@v45
+        id: changed
+        with:
+          files_yaml: |
+            web_cart:
+              - web/dorashop/cart/**
+            web_products:
+              - web/dorashop/products/**
+            web_core:
+              - web/dorashop/dorashop/**
+              - web/dorashop/requirements.txt
+              - web/dorashop/Dockerfile
+              - web/dorashop/docker-compose.yml
+              - web/dorashop/manage.py
+              - web/dorashop/entrypoint.sh
+            web_other:
+              - web/dorashop/templates/**
+              - web/dorashop/static/**
+              - web/dorashop/media/**
+            k8s:
+              - ci-cd/k8s/**
+            workflows:
+              - .github/workflows/**
+      
+      - name: Build Strategy Decision
+        id: strategy
+        run: |
+          SOURCE="${{ steps.detect.outputs.source }}"
+          
+          if [[ "$SOURCE" == "submodule" ]]; then
+            PATHS="${{ steps.detect.outputs.web_paths }}"
+          else
+            # Build paths string from direct changes
+            PATHS=""
+            [[ "${{ steps.changed.outputs.web_cart_any_changed }}" == "true" ]] && PATHS="${PATHS}cart "
+            [[ "${{ steps.changed.outputs.web_products_any_changed }}" == "true" ]] && PATHS="${PATHS}products "
+            [[ "${{ steps.changed.outputs.web_core_any_changed }}" == "true" ]] && PATHS="${PATHS}core "
+            [[ "${{ steps.changed.outputs.web_other_any_changed }}" == "true" ]] && PATHS="${PATHS}other "
+            PATHS=$(echo "$PATHS" | xargs)
+            
+            K8S_CHANGED="${{ steps.changed.outputs.k8s_any_changed }}"
+            WF_CHANGED="${{ steps.changed.outputs.workflows_any_changed }}"
+            
+            echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
+            echo "📝 Direct changed paths: $PATHS"
+            echo "📝 K8s changed: $K8S_CHANGED"
+            echo "📝 Workflows changed: $WF_CHANGED"
+          fi
+          
+          # Decision logic
+          if [[ "$PATHS" =~ (cart|products|core) ]]; then
+            echo "needs_full_test=true" >> $GITHUB_OUTPUT
+            echo "needs_light_scan=false" >> $GITHUB_OUTPUT
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "🎯 Strategy: Full Test + Build + Deploy"
+            
+          elif [[ "$PATHS" == "other" ]] || [[ "$PATHS" =~ "other" ]]; then
+            echo "needs_full_test=false" >> $GITHUB_OUTPUT
+            echo "needs_light_scan=true" >> $GITHUB_OUTPUT
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "🎯 Strategy: Light Scan + Build + Deploy"
+            
+          elif [[ "$K8S_CHANGED" == "true" ]] && [[ -z "$PATHS" ]]; then
+            echo "needs_full_test=false" >> $GITHUB_OUTPUT
+            echo "needs_light_scan=false" >> $GITHUB_OUTPUT
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "🎯 Strategy: Deploy Manifest Only (no build)"
+            
+          elif [[ "$WF_CHANGED" == "true" ]] && [[ -z "$PATHS" ]] && [[ "$K8S_CHANGED" != "true" ]]; then
+            echo "needs_full_test=false" >> $GITHUB_OUTPUT
+            echo "needs_light_scan=false" >> $GITHUB_OUTPUT
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "🎯 Strategy: Skip all (workflow changes only)"
+            
+          else
+            echo "needs_full_test=false" >> $GITHUB_OUTPUT
+            echo "needs_light_scan=false" >> $GITHUB_OUTPUT
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "🎯 Strategy: Skip all (no relevant changes)"
+          fi
+
+  # Full test for cart/products/core changes
+  full-test-scan:
+    name: Full Test & Scan
+    needs: detect-changes
+    if: needs.detect-changes.outputs.needs_full_test == 'true'
+    uses: ./.github/workflows/reusable-test-scan.yml
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Light scan for templates/static changes
+  light-scan:
+    name: Light Security Scan
+    needs: detect-changes
+    if: needs.detect-changes.outputs.needs_light_scan == 'true'
+    uses: ./.github/workflows/reusable-light-scan.yml
+
+  # Build and deploy
+  build-deploy:
+    name: Build & Deploy
+    needs: [detect-changes, full-test-scan, light-scan]
+    if: |
+      always() &&
+      needs.detect-changes.outputs.needs_build == 'true' &&
+      github.event_name == 'push' &&
+      (needs.full-test-scan.result == 'success' || needs.full-test-scan.result == 'skipped') &&
+      (needs.light-scan.result == 'success' || needs.light-scan.result == 'skipped')
+    uses: ./.github/workflows/reusable-build-deploy.yml
+    with:
+      environment: ${{ needs.detect-changes.outputs.environment }}
+      image-tag: ${{ github.sha }}
+      skip-build: ${{ needs.detect-changes.outputs.skip_build == 'true' }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

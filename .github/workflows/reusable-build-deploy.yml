@@ -1,0 +1,135 @@
+name: Reusable Build & Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (dev, staging, production)'
+        required: true
+        type: string
+      image-tag:
+        description: 'Docker image tag'
+        required: true
+        type: string
+      skip-build:
+        description: 'Skip build and only update manifests'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      GITHUB_TOKEN:
+        required: true
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY_URL: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: my-web-app
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure AWS credentials
+        if: ${{ !inputs.skip-build }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: ${{ !inputs.skip-build }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        if: ${{ !inputs.skip-build }}
+        id: build-image
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ inputs.image-tag }}
+        run: |
+          docker build -t $REGISTRY/$REPO:$TAG \
+                       -t $REGISTRY/$REPO:latest \
+                       -f web/dorashop/Dockerfile web/dorashop/
+          
+          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy vulnerability scanner (Docker Image)
+        if: ${{ !inputs.skip-build }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image-tag }}'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy Image results to GitHub Security
+        if: ${{ !inputs.skip-build }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: Push Docker Image to ECR
+        if: ${{ !inputs.skip-build }}
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ inputs.image-tag }}
+        run: |
+          docker push $REGISTRY/$REPO:$TAG
+          docker push $REGISTRY/$REPO:latest
+
+      - name: Update Kubernetes Manifest
+        env:
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "Updating $ENVIRONMENT overlay with image tag: $IMAGE_TAG"
+          
+          git config --global user.email "ci-cd-bot@users.noreply.github.com"
+          git config --global user.name "CI/CD Bot"
+          
+          cd ci-cd/k8s/overlays/$ENVIRONMENT
+          
+          if [[ "${{ inputs.skip-build }}" == "true" ]]; then
+            echo "⚠️ Skipping image tag update (manifest-only deployment)"
+          else
+            kustomize edit set image dorashop-web=${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          fi
+          
+          git add kustomization.yaml
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            COMMIT_MSG="chore(gitops): update $ENVIRONMENT"
+            if [[ "${{ inputs.skip-build }}" == "true" ]]; then
+              COMMIT_MSG="$COMMIT_MSG manifests [skip ci]"
+            else
+              COMMIT_MSG="$COMMIT_MSG image to $IMAGE_TAG [skip ci]"
+            fi
+            
+            git commit -m "$COMMIT_MSG"
+            git pull origin ${{ github.ref_name }} --rebase
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ GitOps manifest updated successfully"
+          fi
