@@ -32,11 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       source: ${{ steps.detect.outputs.source }}
-      web_paths: ${{ steps.detect.outputs.web_paths }}
-      needs_full_test: ${{ steps.detect.outputs.needs_full_test }}
-      needs_light_scan: ${{ steps.detect.outputs.needs_light_scan }}
-      needs_build: ${{ steps.detect.outputs.needs_build }}
-      skip_build: ${{ steps.detect.outputs.skip_build }}
+      web_paths: ${{ steps.strategy.outputs.web_paths }}
+      needs_full_test: ${{ steps.strategy.outputs.needs_full_test }}
+      needs_light_scan: ${{ steps.strategy.outputs.needs_light_scan }}
+      needs_build: ${{ steps.strategy.outputs.needs_build }}
+      skip_build: ${{ steps.strategy.outputs.skip_build }}
       environment: ${{ steps.detect.outputs.environment }}
     
     steps:
@@ -100,9 +100,12 @@ jobs:
         id: strategy
         run: |
           SOURCE="${{ steps.detect.outputs.source }}"
+          K8S_CHANGED="false"
+          WF_CHANGED="false"
           
           if [[ "$SOURCE" == "submodule" ]]; then
             PATHS="${{ steps.detect.outputs.web_paths }}"
+            echo "📝 Submodule paths: $PATHS"
           else
             # Build paths string from direct changes
             PATHS=""
@@ -115,11 +118,12 @@ jobs:
             K8S_CHANGED="${{ steps.changed.outputs.k8s_any_changed }}"
             WF_CHANGED="${{ steps.changed.outputs.workflows_any_changed }}"
             
-            echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
             echo "📝 Direct changed paths: $PATHS"
             echo "📝 K8s changed: $K8S_CHANGED"
             echo "📝 Workflows changed: $WF_CHANGED"
           fi
+          
+          echo "web_paths=$PATHS" >> $GITHUB_OUTPUT
           
           # Decision logic
           if [[ "$PATHS" =~ (cart|products|core) ]]; then
