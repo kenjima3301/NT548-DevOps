@@ -34,6 +34,8 @@ jobs:
           if [ -n "${{ github.event.client_payload.sha }}" ]; then
             echo "🔥 Mode: Auto Trigger from Web"
             TARGET="${{ github.event.client_payload.sha }}"
+            CHANGED_PATHS="${{ github.event.client_payload.changed_paths }}"
+            echo "📝 Changed paths: $CHANGED_PATHS"
             
           elif [ -n "${{ inputs.sha }}" ]; then
             echo "👋 Mode: Manual Input"
@@ -50,6 +52,7 @@ jobs:
           # Get actual commit hash after checkout
           ACTUAL_SHA=$(git rev-parse HEAD)
           echo "target_sha=$ACTUAL_SHA" >> $GITHUB_OUTPUT
+          echo "changed_paths=$CHANGED_PATHS" >> $GITHUB_OUTPUT
           cd ../..
 
       # 3. Commit & Push (Chỉ push nếu có thay đổi)
@@ -59,8 +62,17 @@ jobs:
           git config --global user.email 'ci-cd-bot@users.noreply.github.com'
           
           if [[ -n $(git status -s) ]]; then
+            # Build commit message with changed paths info
+            COMMIT_MSG="chore: update submodule to ${{ steps.update.outputs.target_sha }}"
+            
+            if [[ -n "${{ steps.update.outputs.changed_paths }}" ]]; then
+              COMMIT_MSG="$COMMIT_MSG
+
+Changed paths: ${{ steps.update.outputs.changed_paths }}"
+            fi
+            
             git add .
-            git commit -m "chore: update submodule to ${{ steps.update.outputs.target_sha }}"
+            git commit -m "$COMMIT_MSG"
             git push origin main
           else
             echo "✅ Submodule is already up to date. No changes."
