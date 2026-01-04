@@ -157,8 +157,16 @@ jobs:
             fi
             
             git commit -m "$COMMIT_MSG"
-            git push origin ${{ github.ref_name }}
-            echo "✅ Pushed submodule update to ${{ github.ref_name }}"
+            
+            # Determine target branch (default to main if triggered by repository_dispatch)
+            TARGET_BRANCH="${{ github.ref_name }}"
+            if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+              TARGET_BRANCH="test"  # Change to 'main' if you want to push to main
+            fi
+            
+            echo "📤 Pushing to branch: $TARGET_BRANCH"
+            git push origin HEAD:$TARGET_BRANCH
+            echo "✅ Pushed submodule update to $TARGET_BRANCH"
           else
             echo "✅ Submodule is already up to date. No changes."
           fi
