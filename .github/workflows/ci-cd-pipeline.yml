@@ -24,6 +24,9 @@ on:
   workflow_dispatch:
 
 env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY_URL: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: my-web-app
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -196,20 +199,128 @@ jobs:
 
   # Full test for cart/products/core changes
   full-test-scan:
-    name: Full Test & Scan
+    name: Full Test & Security Scan
     needs: detect-changes
     if: needs.detect-changes.outputs.needs_full_test == 'true'
-    uses: ./.github/workflows/reusable-test-scan.yml
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: dorashop
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd web/dorashop
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-django
+
+      - name: Run Django Tests with Coverage
+        env:
+          DJANGO_SETTINGS_MODULE: dorashop.settings
+          PYTHONPATH: ${{ github.workspace }}/web/dorashop
+          DB_ENGINE: django.db.backends.postgresql
+          DB_NAME: dorashop
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_HOST: localhost
+          DB_PORT: 5432
+        run: |
+          cd web/dorashop
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
+          cd ${{ github.workspace }}
+          pytest ci-cd/sonarqube/tests/ \
+            -c ci-cd/sonarqube/pytest.ini \
+            --cov=web/dorashop \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-config=ci-cd/sonarqube/.coveragerc
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        with:
+          args: >
+            -Dproject.settings=ci-cd/sonarqube/sonar-project.properties
+            -Dsonar.projectBaseDir=${{ github.workspace }}
+            -Dsonar.scm.provider=git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'web/dorashop'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
 
   # Light scan for templates/static changes
   light-scan:
     name: Light Security Scan
     needs: detect-changes
     if: needs.detect-changes.outputs.needs_light_scan == 'true'
-    uses: ./.github/workflows/reusable-light-scan.yml
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run Trivy vulnerability scanner (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'web/dorashop'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
 
   # Build and deploy
   build-deploy:
@@ -221,12 +332,103 @@ jobs:
       github.event_name == 'push' &&
       (needs.full-test-scan.result == 'success' || needs.full-test-scan.result == 'skipped') &&
       (needs.light-scan.result == 'success' || needs.light-scan.result == 'skipped')
-    uses: ./.github/workflows/reusable-build-deploy.yml
-    with:
-      environment: ${{ needs.detect-changes.outputs.environment }}
-      image-tag: ${{ github.sha }}
-      skip-build: ${{ needs.detect-changes.outputs.skip_build == 'true' }}
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Configure AWS credentials
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        id: build-image
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker build -t $REGISTRY/$REPO:$TAG \
+                       -t $REGISTRY/$REPO:latest \
+                       -f web/dorashop/Dockerfile web/dorashop/
+          
+          echo "image_uri=$REGISTRY/$REPO:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy vulnerability scanner (Docker Image)
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          trivyignores: 'ci-cd/trivy/.trivyignore'
+
+      - name: Upload Trivy Image results to GitHub Security
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: Push Docker Image to ECR
+        if: needs.detect-changes.outputs.skip_build != 'true'
+        env:
+          REGISTRY: ${{ env.ECR_REGISTRY_URL }}
+          REPO: ${{ env.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker push $REGISTRY/$REPO:$TAG
+          docker push $REGISTRY/$REPO:latest
+
+      - name: Update Kubernetes Manifest
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ENVIRONMENT: ${{ needs.detect-changes.outputs.environment }}
+        run: |
+          echo "Updating $ENVIRONMENT overlay with image tag: $IMAGE_TAG"
+          
+          git config --global user.email "ci-cd-bot@users.noreply.github.com"
+          git config --global user.name "CI/CD Bot"
+          
+          cd ci-cd/k8s/overlays/$ENVIRONMENT
+          
+          if [[ "${{ needs.detect-changes.outputs.skip_build }}" == "true" ]]; then
+            echo "⚠️ Skipping image tag update (manifest-only deployment)"
+          else
+            kustomize edit set image dorashop-web=${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          fi
+          
+          git add kustomization.yaml
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            COMMIT_MSG="chore(gitops): update $ENVIRONMENT"
+            if [[ "${{ needs.detect-changes.outputs.skip_build }}" == "true" ]]; then
+              COMMIT_MSG="$COMMIT_MSG manifests [skip ci]"
+            else
+              COMMIT_MSG="$COMMIT_MSG image to $IMAGE_TAG [skip ci]"
+            fi
+            
+            git commit -m "$COMMIT_MSG"
+            git pull origin ${{ github.ref_name }} --rebase
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ GitOps manifest updated successfully"
+          fi
