@@ -3,28 +3,28 @@ kind: Kustomization
 
 namespace: dorashop
 resources:
-  - ../../base
+- ../../base
 
 namePrefix: prod-
 
 replicas:
-  - name: dorashop-web
-    count: 3
+- count: 3
+  name: dorashop-web
 
 images:
-  - name: dorashop-web
-    newName: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app
-    newTag: latest
+- name: dorashop-web
+  newName: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app
+  newTag: 3e60f9756e0840ef3e507a019db8185db69d946d
 
 commonLabels:
   environment: production
 
 configMapGenerator:
-  - name: app-config
-    literals:
-      - ENVIRONMENT=production
-      - DEBUG=false
+- literals:
+  - ENVIRONMENT=production
+  - DEBUG=false
+  name: app-config
 
 # Production-specific resource limits
 patches:
-  - path: patches/resources.yaml
+- path: patches/resources.yaml
