@@ -321,7 +321,7 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-fs-results.sarif'
-
+#
   # Build and deploy
   build-deploy:
     name: Build & Deploy
