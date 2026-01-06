@@ -14,7 +14,7 @@ replicas:
 images:
 - name: dorashop-web
   newName: 540649423715.dkr.ecr.ap-southeast-1.amazonaws.com/my-web-app
-  newTag: 3e60f9756e0840ef3e507a019db8185db69d946d
+  newTag: e285e4128e3656960dec5aebec7760f837eea368
 
 commonLabels:
   environment: production
