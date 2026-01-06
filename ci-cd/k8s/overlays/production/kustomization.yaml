@@ -28,3 +28,4 @@ configMapGenerator:
 # Production-specific resource limits
 patches:
 - path: patches/resources.yaml
+- path: patches/db-host.yaml

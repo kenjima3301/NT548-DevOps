@@ -7,6 +7,9 @@ resources:
 
 namePrefix: staging-
 
+patches:
+  - path: patches/db-host.yaml
+
 replicas:
   - name: dorashop-web
     count: 2
